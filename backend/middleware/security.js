@@ -1,11 +1,10 @@
 const rateLimit = require('express-rate-limit');
-const slowDown = require('express-slow-down');
 const helmet = require('helmet');
 
 // Rate limiting for login attempts - stricter for security
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 login attempts per windowMs (reduced from 15)
+  max: 100, // limit each IP to 100 FAILED login attempts per windowMs (generous: whole school shares one NAT IP)
   message: {
     message: 'Too many login attempts, please try again after 15 minutes'
   },
@@ -14,42 +13,10 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true // Don't count successful logins
 });
 
-// Rate limiting for logout attempts
-const logoutLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 logout attempts per windowMs
-  message: {
-    message: 'Too many logout attempts, please try again later'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-// Rate limiting for public forgot-password requests.
-// Looser per-IP than login (no credential guessing here, just request +
-// notification spam) because a whole school can share one NAT IP.
-// Per-account abuse is stopped separately in the handler via pending-dedup
-// + 12h cooldown, so a distributed attack on one victim still fails.
-const forgotLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // limit each IP to 10 forgot-password requests per hour
-  message: {
-    message: 'Terlalu banyak permintaan reset password. Coba lagi nanti.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-// General API rate limiting
-const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 500, // limit each IP to 500 requests per minute
-  message: {
-    message: 'Too many requests, please try again later'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+// NOTE: logout/forgot/general-API limiters were removed. The whole school
+// shares one NAT IP, so per-IP budgets throttled legitimate users.
+// Forgot-password abuse is still stopped per-account (pending-dedup + 12h
+// cooldown in routes/auth.js).
 
 // SQL Injection prevention middleware
 const sqlInjectionPrevention = (req, res, next) => {
@@ -229,9 +196,6 @@ const securityLogger = (req, res, next) => {
 
 module.exports = {
   loginLimiter,
-  logoutLimiter,
-  forgotLimiter,
-  apiLimiter,
   sqlInjectionPrevention,
   xssPrevention,
   sanitizeInput,

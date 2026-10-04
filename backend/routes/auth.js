@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
-const { loginLimiter, logoutLimiter, forgotLimiter } = require('../middleware/security');
+const { loginLimiter } = require('../middleware/security');
 const { logActivity } = require('../utils/logger');
 
 // Helper: true when the request actually arrived over HTTPS (direct or via proxy)
@@ -105,7 +105,7 @@ const user = users[0];
 });
 
 // Logout - clear the HTTP-only cookie (same Secure policy as login, so it actually clears)
-router.post('/logout', logoutLimiter, (req, res) => {
+router.post('/logout', (req, res) => {
     res.clearCookie('token', {
         httpOnly: true,
         secure: isRequestSecure(req),
@@ -133,12 +133,13 @@ router.get('/verify', (req, res) => {
 // Public forgot-password request (no session required).
 // Creates the same password_reset_requests row the old Profile button made,
 // for superadmin approval. Always returns a generic message so callers can't
-// enumerate which usernames exist. Per-IP spam is stopped by forgotLimiter;
+// enumerate which usernames exist. Per-account spam is stopped by pending-dedup
+// + 12h cooldown below.
 // per-account spam by pending-dedup + 12h cooldown below.
 const FORGOT_GENERIC_MESSAGE = 'Jika username terdaftar, permintaan reset telah dikirim ke SuperAdmin. Hubungi admin sekolah untuk tindak lanjut.';
 const FORGOT_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-router.post('/forgot-password', forgotLimiter, async (req, res) => {
+router.post('/forgot-password', async (req, res) => {
     try {
         const rawUsername = req.body?.username;
         if (typeof rawUsername !== 'string' || rawUsername.trim().length === 0) {

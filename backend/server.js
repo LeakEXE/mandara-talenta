@@ -22,9 +22,8 @@ const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { enforceCredentialsChanged } = require('./middleware/auth');
 const { UPLOAD_DIR } = require('./utils/paths');
-const { 
-  securityHeaders, 
-  apiLimiter, 
+const {
+  securityHeaders,
   sqlInjectionPrevention, 
   xssPrevention, 
   sanitizeInput, 
@@ -58,8 +57,9 @@ if (process.env.TRUST_PROXY !== undefined) {
 // Security Middleware - Security headers (Helmet)
 app.use(securityHeaders);
 
-// Security Middleware - Rate limiting
-app.use(apiLimiter);
+// NOTE: no global rate/speed limiting. The whole school sits behind one NAT
+// IP, so per-IP budgets (previously 100 req/min) throttled legitimate users.
+// Brute-force protection lives on the login route itself (see routes/auth.js).
 
 // Security Middleware - Request logging for security audit
 app.use(securityLogger);
