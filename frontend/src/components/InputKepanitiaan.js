@@ -465,7 +465,7 @@ function InputKepanitiaan() {
 
   return (
     <div className="card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
         <h2>Input Kepanitiaan</h2>
         {showStaffIndex && (
           <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
@@ -494,7 +494,7 @@ function InputKepanitiaan() {
                   value={indexSearch}
                   onChange={(e) => setIndexSearch(e.target.value)}
                   placeholder="Cari nama, NIS, jenis, jabatan..."
-                  style={{ padding: '8px 12px', border: '1px solid #d0d0d0', borderRadius: '4px', minWidth: '240px' }}
+                  style={{ flex: '1 1 200px', minWidth: 0, padding: '8px 12px', border: '1px solid #d0d0d0', borderRadius: '4px' }}
                 />
                 {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -518,7 +518,7 @@ function InputKepanitiaan() {
                   </div>
                 )}
               </div>
-              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
                   <tr>

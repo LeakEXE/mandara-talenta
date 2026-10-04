@@ -146,8 +146,8 @@ function Notifications() {
                 {(() => { const Icon = getNotificationIcon(notif.type); return (
                 <span style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--slate)' }}><Icon size={22} /></span>
                 ); })()}
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px' }}>
                     <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--text-primary)' }}>
                       {getNotificationTitle(notif.type)}
                       {!notif.is_read && (

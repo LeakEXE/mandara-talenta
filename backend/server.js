@@ -4,7 +4,13 @@ io.init({
     eventLoop: true,
     http: true,
     runtime: true,
-    network: true
+    // NOTE: network meter intentionally OFF. @pm2/io's network metric wraps
+    // net.Socket.prototype.read and adds a new 'data' listener on EVERY read
+    // without ever removing it (network.js in @pm2/io). Under keep-alive load
+    // (k6 reuses sockets heavily) this piles listeners onto one socket and
+    // trips "MaxListenersExceededWarning: 11 data listeners added to [Socket]".
+    // Re-enable only if that upstream leak is fixed.
+    network: false
   }
 });
 

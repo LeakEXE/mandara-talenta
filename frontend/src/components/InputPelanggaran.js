@@ -448,7 +448,7 @@ function InputPelanggaran() {
 
   return (
     <div className="card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
         <h2>Input Pelanggaran</h2>
         {showStaffIndex && (
           <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
@@ -500,7 +500,7 @@ function InputPelanggaran() {
           {loadingIndex ? (
             <div className="loading"><div className="spinner"></div></div>
           ) : (
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
                   <tr>

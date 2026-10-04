@@ -429,6 +429,9 @@
 .chart-span { grid-column: 1 / -1; }
 .chart-sub { font-size: 12px; color: var(--slate); margin: 0 0 10px; }
 .chart-body { position: relative; height: 260px; }
+
+/* Donut + bottom legend needs extra room on phones */
+.chart-body-legend { height: 340px; }
 .chart-empty {
   position: absolute;
   inset: 0;

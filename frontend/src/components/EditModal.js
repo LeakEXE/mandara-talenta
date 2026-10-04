@@ -16,9 +16,7 @@ const EditModal = ({ isOpen, title, onClose, onSave, isLoading, children, photoP
             justifyContent: 'center',
             zIndex: 2000
         }}>
-            <div className="edit-modal-content" style={{
-                width: 500,
-                maxWidth: '90%',
+            <div className="edit-modal-content modal-sheet" style={{
                 maxHeight: '90vh',
                 overflowY: 'auto',
                 backgroundColor: 'white',

@@ -507,7 +507,7 @@ function InputPrestasi() {
 
   return (
     <div className="card">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
         <h2>Input Prestasi</h2>
         {showStaffIndex && (
           <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
@@ -536,7 +536,7 @@ function InputPrestasi() {
                 placeholder="Cari nama, NIS, lomba, kategori..."
                 value={indexSearch}
                 onChange={(e) => setIndexSearch(e.target.value)}
-                style={{ padding: '6px 10px', fontSize: '13px', border: '1px solid #ccc', borderRadius: '4px', minWidth: '260px' }}
+                style={{ flex: '1 1 200px', minWidth: 0, padding: '6px 10px', fontSize: '13px', border: '1px solid #ccc', borderRadius: '4px' }}
               />
               {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
                 <>
@@ -560,7 +560,7 @@ function InputPrestasi() {
                 </>
               )}
             </div>
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
                   <tr>

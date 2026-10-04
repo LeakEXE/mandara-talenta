@@ -194,6 +194,7 @@ function ResetPassword() {
         ) : pending.length === 0 ? (
           <p style={{ color: 'var(--text-secondary)' }}>Tidak ada permintaan menunggu persetujuan.</p>
         ) : (
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
@@ -227,6 +228,7 @@ function ResetPassword() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -246,6 +248,7 @@ function ResetPassword() {
         </div>
 
         {users.length > 0 && (
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
@@ -280,6 +283,7 @@ function ResetPassword() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -289,7 +293,7 @@ function ResetPassword() {
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label>Password Sementara</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={tempPassword}
@@ -297,7 +301,7 @@ function ResetPassword() {
                   placeholder="Minimal 6 karakter"
                   autoComplete="new-password"
                   required
-                  style={{ flex: 1 }}
+                  style={{ flex: '1 1 160px', minWidth: 0 }}
                 />
                 <button type="button" className="btn btn-secondary" onClick={() => setShowPassword((s) => !s)}>
                   {showPassword ? 'Sembunyi' : 'Lihat'}
