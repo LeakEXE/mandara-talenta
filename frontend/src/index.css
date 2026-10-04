@@ -1151,9 +1151,10 @@ p {
   .sidebar {
     position: fixed;
     left: 0;
-    top: 0;
+    top: var(--mobile-header-h);
     width:  280px;
-    height: 100%;
+    height: calc(100% - var(--mobile-header-h));
+    height: calc(100dvh - var(--mobile-header-h));
     transform: translateX(-100%);
     transition: transform var(--transition-medium);
     z-index: 1002;
