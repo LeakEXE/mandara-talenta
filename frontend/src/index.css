@@ -1290,6 +1290,27 @@ p {
   }
 }
 
+.school-save-row {
+  max-width: 720px;
+}
+
+.logo-upload-row > div:last-child {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .logo-upload-label {
+    display: block;
+    text-align: center;
+  }
+
+  .school-save-row > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 /* Tablet responsive */
 @media (max-width: 768px) {
   .login-container {
@@ -1444,6 +1465,19 @@ p {
 .form-row > select,
 .form-row > textarea {
   flex: 1 1 200px;
+}
+
+/* Two-column form grids (input pages): collapse to one column on phones */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .form-grid-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Modal sheets: fit any viewport, scroll internally.

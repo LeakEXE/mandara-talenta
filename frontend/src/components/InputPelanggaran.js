@@ -582,7 +582,7 @@ function InputPelanggaran() {
       {/* Input Form - Show for non-superadmin or when showForm is true */}
       {((userRole !== 'superadmin' && !canApprove) || showForm) && (
         <form onSubmit={handleSubmit}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Nama <span className="required">*</span></label>
             {userRole === 'siswa' ? (
@@ -651,7 +651,7 @@ function InputPelanggaran() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Kelas</label>
             <input 

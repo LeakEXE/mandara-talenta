@@ -558,7 +558,7 @@ function InputPerilaku() {
       {/* Input Form - Show for non-superadmin or when showForm is true */}
       {((userRole !== 'superadmin' && !canApprove) || showForm) && (
         <form onSubmit={handleSubmit}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Nama <span className="required">*</span></label>
             {userRole === 'siswa' ? (
@@ -627,7 +627,7 @@ function InputPerilaku() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Kelas</label>
             <input 
@@ -654,7 +654,7 @@ function InputPerilaku() {
 
         <div style={{ marginBottom: '20px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '16px', fontWeight: '600' }}>Perkembangan Karakter</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div className="form-grid-2">
             <div className="form-group">
               <label>Tanggung Jawab <span className="required">*</span></label>
               <select name="tanggung_jawab" value={formData.tanggung_jawab} onChange={handleChange} required>
@@ -804,7 +804,7 @@ function InputPerilaku() {
           </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           {['tanggung_jawab', 'disiplin', 'kepedulian', 'kemandirian', 'spiritual', 'kejujuran', 'kepercayaan_diri'].map(field => (
             <div key={field} className="form-group">
               <label>{field.replace(/_/g, ' ').charAt(0).toUpperCase() + field.replace(/_/g, ' ').slice(1)}</label>
