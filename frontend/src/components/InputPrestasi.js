@@ -641,7 +641,7 @@ function InputPrestasi() {
       {/* Input Form - Show for non-superadmin or when showForm is true */}
       {((userRole !== 'superadmin' && !canApprove) || showForm) && (
         <form onSubmit={handleSubmit}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Kategori Lomba</label>
             <select name="kategori_lomba" value={formData.kategori_lomba} onChange={handleChange} required>
@@ -660,7 +660,7 @@ function InputPrestasi() {
 
         {formData.kategori_lomba !== 'kelompok' && (
         <>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Nama <span className="required">*</span></label>
             {userRole === 'siswa' ? (
@@ -729,7 +729,7 @@ function InputPrestasi() {
           </div>
         </div>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Kelas</label>
             <input 
@@ -801,7 +801,7 @@ function InputPrestasi() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Juara</label>
             <select name="juara" value={formData.juara} onChange={handleChange}>
@@ -925,7 +925,7 @@ function InputPrestasi() {
           />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div className="form-grid-2">
           <div className="form-group">
             <label>Jenis Lomba</label>
             <select name="jenis_lomba" value={editModal.editFormData.jenis_lomba || 'akademik'} onChange={(e) => editModal.setEditFormData({ ...editModal.editFormData, jenis_lomba: e.target.value })}>

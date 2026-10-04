@@ -216,9 +216,9 @@ function SchoolConfig() {
 
       <div className="school-config-grid" style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        gridTemplateColumns: '1fr',
         gap: '20px',
-        maxWidth: '900px'
+        maxWidth: '720px'
       }}>
         {/* School Info Card */}
         <div style={{
@@ -226,8 +226,7 @@ function SchoolConfig() {
           border: `1px solid ${BORDER}`,
           borderRadius: RADIUS,
           boxShadow: SHADOW,
-          padding: '24px',
-          gridColumn: 'span 2'
+          padding: '24px'
         }}>
           <h3 style={{
             fontSize: '16px',
@@ -413,11 +412,12 @@ function SchoolConfig() {
             color: TEXT
           }}>Logo Sekolah</h3>
           
-<div style={{
+<div className="logo-upload-row" style={{
              marginBottom: '18px',
              display: 'flex',
              alignItems: 'center',
-             gap: '16px'
+             gap: '16px',
+             flexWrap: 'wrap'
            }}>
              {config.logo_url ? (
                <img
@@ -453,7 +453,7 @@ function SchoolConfig() {
                <div style={{ fontSize: '13px', color: MUTED, marginBottom: '8px' }}>
                  {config.logo_url ? 'Logo saat ini' : 'Belum ada logo'}
                </div>
-               <label style={{
+               <label className="logo-upload-label" style={{
                  display: 'inline-block',
                  padding: '8px 16px',
                  background: uploading ? MUTED : BLUE,
@@ -483,7 +483,7 @@ function SchoolConfig() {
       </div>
 
       {/* Save Button */}
-      <div style={{
+      <div className="school-save-row" style={{
         marginTop: '24px',
         display: 'flex',
         justifyContent: 'flex-end'
