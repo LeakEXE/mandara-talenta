@@ -69,6 +69,7 @@ function Logs() {
       <h2>Activity Logs</h2>
       <p>Logs ini menampilkan semua aktivitas yang direkam dalam sistem<br /><em>*Dibuat untuk memudahkan pengembang website</em></p>
       <div className="card">
+        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -91,6 +92,7 @@ function Logs() {
             ))}
           </tbody>
         </table>
+        </div>
         {logs.length === 0 && (
           <p style={{ textAlign: 'center', padding: '24px', color: '#999' }}>Belum ada activity logs.</p>
         )}

@@ -12,13 +12,14 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer
 } from 'recharts';
 import './Dashboard.css';
 import { Megaphone, Target, Users, GraduationCap, BarChart3, Trophy, Award } from 'lucide-react';
 import { MedalIcon } from './icons';
 
-const COLORS = ['#2563eb', '#14b8a6', '#16a34a', '#f59e0b', '#8b5cf6', '#ef4444'];
+const COLORS = ['#2563eb', '#0d9488', '#15803d', '#d97706', '#7c3aed', '#dc2626', '#db2777', '#0284c7', '#475569'];
 const TOOLTIP_STYLE = {
   backgroundColor: 'white',
   border: '1px solid #e2e8f0',
@@ -48,6 +49,35 @@ function StudentAvatar({ foto, nama, className }) {
   return <span>{initials(nama)}</span>;
 }
 
+// Percent label rendered inside each donut slice (mid-ring, white text).
+// Used on narrow screens where outside labels would clip.
+function renderInsidePercent({ cx, cy, midAngle, innerRadius, outerRadius, percent }) {
+  const r = (innerRadius + outerRadius) / 2;
+  const x = cx + r * Math.cos((-midAngle * Math.PI) / 180);
+  const y = cy + r * Math.sin((-midAngle * Math.PI) / 180);
+  return (
+    <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
+      {`${Math.round((percent || 0) * 100)}%`}
+    </text>
+  );
+}
+
+// Tracks the 768px breakpoint so charts can swap clipped outside-labels
+// for a wrapping legend on phones/tablets (recharts SVG can't do this via CSS).
+function useIsNarrowChart(breakpoint = 768) {
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= breakpoint
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const onChange = (e) => setIsNarrow(e.matches);
+    setIsNarrow(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [breakpoint]);
+  return isNarrow;
+}
+
 function Dashboard() {
   const minIpt = useMinIptPerGrade();
 
@@ -58,6 +88,11 @@ function Dashboard() {
   const [showLabels, setShowLabels] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [schoolConfig, setSchoolConfig] = useState(null);
+  const isNarrowChart = useIsNarrowChart(768);
+  const grhaTotal = useMemo(
+    () => (stats?.by_grha || []).reduce((sum, g) => sum + (g.count || 0), 0),
+    [stats]
+  );
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -418,16 +453,22 @@ function Dashboard() {
             <div className="chart-box" style={{ animationDelay: '0.15s' }}>
               <h4>Jumlah Siswa per Grha</h4>
               <p className="chart-sub">Proporsi siswa tiap grha</p>
-              <div className="chart-body">
+              <div className={`chart-body${isNarrowChart ? ' chart-body-legend' : ''}`}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart margin={{ top: 18, bottom: 18, left: 8, right: 8 }}>
+                  <PieChart margin={isNarrowChart ? { top: 8, bottom: 8, left: 8, right: 8 } : { top: 18, bottom: 18, left: 8, right: 8 }}>
                     <Pie
                       data={stats.by_grha || []}
                       cx="50%"
-                      cy="50%"
-                      labelLine={showLabels}
-                      label={showLabels ? ({ name, percent, count }) => `${name}: ${count} (${(percent * 100).toFixed(0)}%)` : false}
-                      outerRadius={78}
+                      cy={isNarrowChart ? '44%' : '50%'}
+                      labelLine={showLabels && !isNarrowChart}
+                      label={
+                        !showLabels
+                          ? false
+                          : isNarrowChart
+                            ? renderInsidePercent
+                            : ({ name, percent, count }) => `${name}: ${count} (${(percent * 100).toFixed(0)}%)`
+                      }
+                      outerRadius={isNarrowChart ? 80 : 78}
                       innerRadius={44}
                       fill="#8884d8"
                       dataKey="count"
@@ -438,6 +479,21 @@ function Dashboard() {
                       ))}
                     </Pie>
                     <Tooltip formatter={(v) => [v, 'Jumlah Siswa']} contentStyle={TOOLTIP_STYLE} />
+                    {isNarrowChart && (
+                      <Legend
+                        layout="horizontal"
+                        verticalAlign="bottom"
+                        align="center"
+                        iconSize={10}
+                        wrapperStyle={{ fontSize: 12, lineHeight: '20px', paddingTop: 8 }}
+                        formatter={(value, entry) => {
+                          const count = entry?.payload?.count || 0;
+                          if (!showLabels) return value;
+                          const pct = grhaTotal > 0 ? Math.round((count / grhaTotal) * 100) : 0;
+                          return `${value}: ${count} (${pct}%)`;
+                        }}
+                      />
+                    )}
                   </PieChart>
                 </ResponsiveContainer>
               </div>

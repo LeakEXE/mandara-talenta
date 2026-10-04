@@ -845,7 +845,7 @@ function Profile() {
       
       <div className="card" style={{ marginBottom: '24px' }}>
         <h3 style={{ marginBottom: '20px' }}>Avatar</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '20px', flexWrap: 'wrap' }}>
           <div style={{
             width: '120px',
             height: '120px',
@@ -1010,6 +1010,7 @@ function Profile() {
           <div className="card">
             <h3>Riwayat IPT</h3>
             {iptHistory.length > 0 ? (
+              <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
@@ -1036,6 +1037,7 @@ function Profile() {
                   ))}
                 </tbody>
               </table>
+              </div>
             ) : (
               <p>Belum ada riwayat IPT</p>
             )}

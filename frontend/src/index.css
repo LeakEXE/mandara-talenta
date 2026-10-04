@@ -52,6 +52,8 @@
   --purple: #8b5cf6;
   --purple-bg: #ede9fe;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* Fixed mobile header height — content top offset derives from this */
+  --mobile-header-h: 60px;
 }
 
 body {
@@ -709,7 +711,9 @@ body {
   justify-content: center;
   align-items: center;
   height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100vw;
   position: fixed;
   top: 0;
@@ -1162,14 +1166,9 @@ p {
   .content {
     margin-left: 0;
     padding: 20px;
-    padding-top: 70px;
-    margin-top: 60px;
+    padding-top: calc(var(--mobile-header-h) + 16px);
     position: relative;
     z-index: 1;
-  }
-  
-  .container > .card:first-child {
-    margin-top: 60px;
   }
   
   .stats-grid {
@@ -1256,6 +1255,7 @@ p {
 @media (max-width: 480px) {
   .content {
     padding: 16px;
+    padding-top: calc(var(--mobile-header-h) + 16px);
   }
   
   .stats-grid {
@@ -1281,6 +1281,12 @@ p {
   .login-card {
     padding: 24px 16px;
     margin: 0 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .school-config-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1418,6 +1424,51 @@ p {
   display: block;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Form rows: wrapping flex with non-shrinking-safe children.
+   Use for search bars, filter rows, and header action rows so they
+   collapse instead of overflowing on 360px screens. */
+.form-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-row > * {
+  min-width: 0;
+}
+
+.form-row > input,
+.form-row > select,
+.form-row > textarea {
+  flex: 1 1 200px;
+}
+
+/* Modal sheets: fit any viewport, scroll internally.
+   Apply alongside component-specific modal content styles. */
+.modal-sheet {
+  width: 500px;
+  max-width: calc(100vw - 32px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 480px) {
+  .form-row {
+    align-items: stretch;
+  }
+
+  .form-row > .btn {
+    flex: 1 1 100%;
+  }
+
+  .modal-sheet {
+    padding: 20px 16px;
+  }
 }
 
 .empty-state {

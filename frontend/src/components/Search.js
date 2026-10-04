@@ -56,7 +56,7 @@ function Search() {
     <div>
       <h2>Search Siswa</h2>
       <div className="card">
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="form-row" style={{ alignItems: 'center' }}>
           <input
             type="text"
             value={query}
@@ -71,6 +71,7 @@ function Search() {
       {results.length > 0 && (
         <div className="card">
           <h3>Hasil Pencarian</h3>
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
@@ -101,6 +102,7 @@ function Search() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -118,6 +120,7 @@ function Search() {
 
           <h4>Prestasi: {selectedStudent.total_prestasi}</h4>
           {selectedStudent.prestasi.length > 0 ? (
+            <div className="table-wrap">
             <table className="table" style={{ marginBottom: '20px' }}>
               <thead>
                 <tr>
@@ -138,6 +141,7 @@ function Search() {
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p style={{ marginBottom: '20px' }}>Tidak ada prestasi</p>
           )}

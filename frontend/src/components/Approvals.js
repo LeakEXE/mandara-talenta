@@ -973,13 +973,11 @@ function Approvals() {
           zIndex: 1500,
           animation: 'approvalFade 0.2s ease'
         }}>
-          <div style={{
+          <div className="modal-sheet" style={{
             background: CARD,
             border: `1px solid ${BORDER}`,
             borderRadius: RADIUS,
             boxShadow: '0 12px 30px -10px rgba(0,0,0,.4)',
-            width: '500px',
-            maxWidth: '90%',
             padding: '24px',
             animation: 'fadeSlide 0.28s ease'
           }}>

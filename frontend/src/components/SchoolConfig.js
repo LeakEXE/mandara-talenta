@@ -214,7 +214,7 @@ function SchoolConfig() {
         </div>
       )}
 
-      <div style={{
+      <div className="school-config-grid" style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(2, 1fr)',
         gap: '20px',
