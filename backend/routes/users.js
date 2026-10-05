@@ -70,10 +70,9 @@ async function applyIptAwalUpdate(userId, newIptAwal, adminId) {
 
     const oldAwal = user.ipt_awal ?? 0;
     const delta = parsedAwal - oldAwal;
-    let newTotal = (user.ipt_total ?? 0) + delta;
-    if (newTotal < 0) {
-        newTotal = 0;
-    }
+    // No floor: IPT totals may legitimately go negative (heavy pelanggaran),
+    // so the stored total always equals ipt_awal + approved records.
+    const newTotal = (user.ipt_total ?? 0) + delta;
 
     await db.query(
         'UPDATE users SET ipt_awal = ?, ipt_total = ? WHERE id = ?',

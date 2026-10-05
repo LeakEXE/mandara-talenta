@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -237,33 +238,51 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete kepanitiaan (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const kepanitiaanId = req.params.id;
-        
-        const [kepanitiaan] = await db.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+
+        const [kepanitiaan] = await conn.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
         if (kepanitiaan.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Kepanitiaan not found' });
         }
 
         const kepanitiaanData = kepanitiaan[0];
 
-        // If approved, revert IPT change
+        // If approved, delete the row first, then recompute the student's
+        // total from the remaining approved records (same formula as
+        // syncIpt.js) — this also heals any pre-existing drift.
         if (kepanitiaanData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [kepanitiaanData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - kepanitiaanData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, kepanitiaanData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [kepanitiaanData.user_id, 'kepanitiaan_delete', -kepanitiaanData.point, iptSebelum, iptSesudah, `Delete Kepanitiaan: ${kepanitiaanData.jabatan_kepanitiaan}`]
-            );
+            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [kepanitiaanData.user_id]);
+            await conn.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+            if (user.length > 0) {
+                const iptSebelum = user[0].ipt_total;
+                const card = await buildIptCardBreakdown(kepanitiaanData.user_id, null, conn.query);
+                const iptSesudah = card ? card.breakdown_total : iptSebelum;
+                if (iptSesudah !== iptSebelum) {
+                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, kepanitiaanData.user_id]);
+
+                    // Log IPT history
+                    await conn.query(
+                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
+                        [kepanitiaanData.user_id, 'kepanitiaan_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Kepanitiaan: ${kepanitiaanData.jabatan_kepanitiaan}`]
+                    );
+                }
+            }
+        } else {
+            // Pending/rejected records never touched IPT — just remove the row.
+            await conn.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_KEPANITIAAN', `Deleted kepanitiaan ID ${kepanitiaanId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (kelompok siblings may share one file — never strand them).
@@ -271,16 +290,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, kepanitiaanData.foto, { folderHint: 'kepanitiaan' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_KEPANITIAAN', `Deleted kepanitiaan ID ${kepanitiaanId}`]
-        );
-
         res.json({ message: 'Kepanitiaan deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

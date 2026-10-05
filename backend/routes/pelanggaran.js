@@ -10,6 +10,7 @@ const { calculatePelanggaranPoints } = require('../constants/points');
 const { resolveStudentIdByNis, applyIptChange } = require('../utils/ipt');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -239,33 +240,52 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete pelanggaran (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const pelanggaranId = req.params.id;
-        
-        const [pelanggaran] = await db.query('SELECT * FROM pelanggaran WHERE id = ?', [pelanggaranId]);
+
+        const [pelanggaran] = await conn.query('SELECT * FROM pelanggaran WHERE id = ?', [pelanggaranId]);
         if (pelanggaran.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Pelanggaran not found' });
         }
 
         const pelanggaranData = pelanggaran[0];
 
-        // If approved, revert IPT change
+        // If approved, delete the row first, then recompute the student's
+        // total from the remaining approved records (same formula as
+        // syncIpt.js) — removing a violation raises the total back and
+        // any pre-existing drift is healed as well.
         if (pelanggaranData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [pelanggaranData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - pelanggaranData.point_dikurangi;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, pelanggaranData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [pelanggaranData.user_id, 'pelanggaran_delete', pelanggaranData.point_dikurangi, iptSebelum, iptSesudah, `Delete Pelanggaran: ${pelanggaranData.jenis_pelanggaran}`]
-            );
+            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [pelanggaranData.user_id]);
+            await conn.query('DELETE FROM pelanggaran WHERE id = ?', [pelanggaranId]);
+            if (user.length > 0) {
+                const iptSebelum = user[0].ipt_total;
+                const card = await buildIptCardBreakdown(pelanggaranData.user_id, null, conn.query);
+                const iptSesudah = card ? card.breakdown_total : iptSebelum;
+                if (iptSesudah !== iptSebelum) {
+                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, pelanggaranData.user_id]);
+
+                    // Log IPT history
+                    await conn.query(
+                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
+                        [pelanggaranData.user_id, 'pelanggaran_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Pelanggaran: ${pelanggaranData.jenis_pelanggaran}`]
+                    );
+                }
+            }
+        } else {
+            // Pending/rejected records never touched IPT — just remove the row.
+            await conn.query('DELETE FROM pelanggaran WHERE id = ?', [pelanggaranId]);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM pelanggaran WHERE id = ?', [pelanggaranId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_PELANGGARAN', `Deleted pelanggaran ID ${pelanggaranId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (rows sharing one file must never strand each other).
@@ -273,16 +293,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, pelanggaranData.foto, { folderHint: 'pelanggaran' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_PELANGGARAN', `Deleted pelanggaran ID ${pelanggaranId}`]
-        );
-
         res.json({ message: 'Pelanggaran deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

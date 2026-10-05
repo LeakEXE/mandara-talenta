@@ -10,6 +10,7 @@ const {
 } = require('../constants/points');
 const { resolveStudentIdByNis, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
 const { movePhotoToApprovedFolder } = require('../utils/fileUtils');
+const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
 
 // Get all perilaku (for approvals)
 router.get('/all', auth, async (req, res) => {
@@ -175,41 +176,58 @@ router.put('/:id', auth, async (req, res) => {
 
 // Delete perilaku (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const perilakuId = req.params.id;
-        
-        const [perilaku] = await db.query('SELECT id, user_id, nama, nis, kelas, grha, karakter_siswa, point, status, rejection_reason, created_at FROM perilaku WHERE id = ?', [perilakuId]);
+
+        const [perilaku] = await conn.query('SELECT id, user_id, nama, nis, kelas, grha, karakter_siswa, point, status, rejection_reason, created_at FROM perilaku WHERE id = ?', [perilakuId]);
         if (perilaku.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Perilaku not found' });
         }
 
         const perilakuData = perilaku[0];
 
-        // If approved, revert IPT change
+        // If approved, delete the row first, then recompute the student's
+        // total from the remaining approved records (same formula as
+        // syncIpt.js). Note the breakdown only counts the LATEST approved
+        // perilaku, so deleting a non-latest one correctly changes nothing.
         if (perilakuData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [perilakuData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - perilakuData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, perilakuData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [perilakuData.user_id, 'perilaku_delete', -perilakuData.point, iptSebelum, iptSesudah, `Delete Perilaku: ${perilakuData.karakter_siswa}`]
-            );
+            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [perilakuData.user_id]);
+            await conn.query('DELETE FROM perilaku WHERE id = ?', [perilakuId]);
+            if (user.length > 0) {
+                const iptSebelum = user[0].ipt_total;
+                const card = await buildIptCardBreakdown(perilakuData.user_id, null, conn.query);
+                const iptSesudah = card ? card.breakdown_total : iptSebelum;
+                if (iptSesudah !== iptSebelum) {
+                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, perilakuData.user_id]);
+
+                    // Log IPT history
+                    await conn.query(
+                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
+                        [perilakuData.user_id, 'perilaku_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Perilaku: ${perilakuData.karakter_siswa}`]
+                    );
+                }
+            }
+        } else {
+            // Pending/rejected records never touched IPT — just remove the row.
+            await conn.query('DELETE FROM perilaku WHERE id = ?', [perilakuId]);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM perilaku WHERE id = ?', [perilakuId]);
+        await conn.commit();
 
-        // Log activity
+        // Log activity (after commit — logActivity writes via the pool and
+        // swallows its own errors, so it must never run inside the txn).
         await logActivity(req.user.id, 'DELETE_PERILAKU', `SuperAdmin ${req.user.nama} deleted perilaku for ${perilakuData.nama} (${perilakuData.nis}): ${perilakuData.karakter_siswa}`, req.ip);
 
         res.json({ message: 'Perilaku deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

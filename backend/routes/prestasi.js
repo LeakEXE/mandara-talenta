@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -255,33 +256,51 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete prestasi (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const prestasiId = req.params.id;
-        
-        const [prestasi] = await db.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
+
+        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
         if (prestasi.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Prestasi not found' });
         }
 
         const prestasiData = prestasi[0];
 
-        // If approved, revert IPT change
+        // If approved, delete the row first, then recompute the student's
+        // total from the remaining approved records (same formula as
+        // syncIpt.js) — this also heals any pre-existing drift.
         if (prestasiData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [prestasiData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - prestasiData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, prestasiData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [prestasiData.user_id, 'prestasi_delete', -prestasiData.point, iptSebelum, iptSesudah, `Delete Prestasi: ${prestasiData.nama_lomba}`]
-            );
+            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [prestasiData.user_id]);
+            await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
+            if (user.length > 0) {
+                const iptSebelum = user[0].ipt_total;
+                const card = await buildIptCardBreakdown(prestasiData.user_id, null, conn.query);
+                const iptSesudah = card ? card.breakdown_total : iptSebelum;
+                if (iptSesudah !== iptSebelum) {
+                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, prestasiData.user_id]);
+
+                    // Log IPT history
+                    await conn.query(
+                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
+                        [prestasiData.user_id, 'prestasi_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Prestasi: ${prestasiData.nama_lomba}`]
+                    );
+                }
+            }
+        } else {
+            // Pending/rejected records never touched IPT — just remove the row.
+            await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_PRESTASI', `Deleted prestasi ID ${prestasiId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (kelompok siblings may share one file — never strand them).
@@ -289,16 +308,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, prestasiData.foto, { folderHint: 'prestasi' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_PRESTASI', `Deleted prestasi ID ${prestasiId}`]
-        );
-
         res.json({ message: 'Prestasi deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

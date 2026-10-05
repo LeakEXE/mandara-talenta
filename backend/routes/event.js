@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -236,33 +237,51 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete event (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const eventId = req.params.id;
-        
-        const [event] = await db.query('SELECT id, user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status, rejection_reason, created_at FROM event WHERE id = ?', [eventId]);
+
+        const [event] = await conn.query('SELECT id, user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status, rejection_reason, created_at FROM event WHERE id = ?', [eventId]);
         if (event.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Event not found' });
         }
 
         const eventData = event[0];
 
-        // If approved, revert IPT change
+        // If approved, delete the row first, then recompute the student's
+        // total from the remaining approved records (same formula as
+        // syncIpt.js) — this also heals any pre-existing drift.
         if (eventData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [eventData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - eventData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, eventData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [eventData.user_id, 'event_delete', -eventData.point, iptSebelum, iptSesudah, `Delete Event: ${eventData.nama_event}`]
-            );
+            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [eventData.user_id]);
+            await conn.query('DELETE FROM event WHERE id = ?', [eventId]);
+            if (user.length > 0) {
+                const iptSebelum = user[0].ipt_total;
+                const card = await buildIptCardBreakdown(eventData.user_id, null, conn.query);
+                const iptSesudah = card ? card.breakdown_total : iptSebelum;
+                if (iptSesudah !== iptSebelum) {
+                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, eventData.user_id]);
+
+                    // Log IPT history
+                    await conn.query(
+                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
+                        [eventData.user_id, 'event_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Event: ${eventData.nama_event}`]
+                    );
+                }
+            }
+        } else {
+            // Pending/rejected records never touched IPT — just remove the row.
+            await conn.query('DELETE FROM event WHERE id = ?', [eventId]);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM event WHERE id = ?', [eventId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_EVENT', `Deleted event ID ${eventId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (kelompok siblings may share one file — never strand them).
@@ -270,16 +289,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, eventData.foto, { folderHint: 'event' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_EVENT', `Deleted event ID ${eventId}`]
-        );
-
         res.json({ message: 'Event deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
