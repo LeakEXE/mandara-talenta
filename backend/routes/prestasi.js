@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
-const { recomputeAndStoreIpt } = require('../utils/ipt');
+const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -151,6 +151,8 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
             jenis: 'prestasi',
             keterangan: buildKeterangan('prestasi', prestasiData),
             executor: conn.query,
+            recordType: 'prestasi',
+            recordId: prestasiId,
         });
 
         // Log activity
@@ -179,7 +181,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         const { rejection_reason } = req.body;
         const prestasiId = req.params.id;
 
-        const [rows] = await conn.query('SELECT id, user_id, foto, status FROM prestasi WHERE id = ?', [prestasiId]);
+        const [rows] = await conn.query('SELECT id, user_id, foto, status, nama_lomba FROM prestasi WHERE id = ?', [prestasiId]);
         if (rows.length === 0) {
             await conn.rollback();
             return res.status(404).json({ message: 'Prestasi not found' });
@@ -193,14 +195,17 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.query('UPDATE prestasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, prestasiId]);
 
-        // A rejected record stops counting: if it was approved before,
-        // recompute the total (same formula as syncIpt.js).
+        // A rejected record stops counting: recompute WITHOUT a tombstone
+        // row ('*_reject' is not in the ipt_history CHECK list), then remove
+        // every history trace of this record like a delete does.
         if (wasApproved) {
             await recomputeAndStoreIpt(rows[0].user_id, {
                 jenis: 'prestasi_reject',
                 keterangan: `Reject Prestasi: ${rejection_reason || 'Tanpa alasan'}`,
                 executor: conn.query,
+                skipHistory: true,
             });
+            await purgeRecordHistory(rows[0].user_id, 'prestasi', prestasiId, recordLifecycleKeterangans('prestasi', rows[0]), conn.query);
         }
 
         // Log activity
@@ -286,6 +291,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                     jenis: 'prestasi_update',
                     keterangan: `Update Prestasi: ${nama_lomba}`,
                     executor: conn.query,
+                    recordType: 'prestasi',
+                    recordId: prestasiId,
                 });
             }
 
@@ -337,11 +344,15 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         // also heals any pre-existing drift. Pending/rejected records never
         // touched IPT, so nothing more to do for them.
         if (wasApproved) {
+            // Recompute WITHOUT a tombstone row, then remove every history
+            // trace of this record so it stops showing in history views.
             await recomputeAndStoreIpt(prestasiData.user_id, {
                 jenis: 'prestasi_delete',
                 keterangan: `Delete Prestasi: ${prestasiData.nama_lomba}`,
                 executor: conn.query,
+                skipHistory: true,
             });
+            await purgeRecordHistory(prestasiData.user_id, 'prestasi', prestasiId, recordLifecycleKeterangans('prestasi', prestasiData), conn.query);
         }
 
         // Log activity

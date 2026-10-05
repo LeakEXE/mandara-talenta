@@ -10,7 +10,7 @@ const {
 } = require('../constants/points');
 const { resolveStudentIdByNis, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
 const { movePhotoToApprovedFolder } = require('../utils/fileUtils');
-const { recomputeAndStoreIpt } = require('../utils/ipt');
+const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Get all perilaku (for approvals)
 router.get('/all', auth, async (req, res) => {
@@ -100,7 +100,8 @@ router.post('/', auth, checkPermission('perilaku'), async (req, res) => {
                 point,
                 buildKeterangan('perilaku', { karakter_siswa: karakter }),
                 result.insertId,
-                conn.query
+                conn.query,
+                { type: 'perilaku', id: result.insertId }
             );
 
             await conn.commit();
@@ -179,6 +180,8 @@ router.put('/:id', auth, async (req, res) => {
                     jenis: 'perilaku_update',
                     keterangan: `Update Perilaku: ${karakter}`,
                     executor: conn.query,
+                    recordType: 'perilaku',
+                    recordId: perilakuId,
                 });
             }
 
@@ -228,11 +231,15 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         // perilaku, so deleting a non-latest one correctly changes nothing.
         // Pending/rejected records never touched IPT.
         if (wasApproved) {
+            // Recompute WITHOUT a tombstone row, then remove every history
+            // trace of this record so it stops showing in history views.
             await recomputeAndStoreIpt(perilakuData.user_id, {
                 jenis: 'perilaku_delete',
                 keterangan: `Delete Perilaku: ${perilakuData.karakter_siswa}`,
                 executor: conn.query,
+                skipHistory: true,
             });
+            await purgeRecordHistory(perilakuData.user_id, 'perilaku', perilakuId, recordLifecycleKeterangans('perilaku', perilakuData), conn.query);
         }
 
         await conn.commit();

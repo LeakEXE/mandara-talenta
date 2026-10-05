@@ -293,10 +293,11 @@ function InputOrganisasi() {
         data.append('foto', fileToUpload);
       }
 
-      await api.post('/approvals/organisasi/submit', data);
+      const response = await api.post('/approvals/organisasi/submit', data);
 
-      setMessage(userRole === 'superadmin' ? 'Organisasi berhasil ditambahkan!' : 'Organisasi berhasil diajukan untuk persetujuan!');
-      if (userRole === 'superadmin') {
+      // Backend decides direct-add vs queue (scope-based); use its message.
+      setMessage(response.data?.message || 'Organisasi berhasil dikirim!');
+      if (response.data?.direct) {
         fetchAllOrganisasi();
       }
       setFormData({

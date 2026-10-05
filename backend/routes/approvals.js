@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
 const path = require('path');
-const { auth, approverOnly, approverFor, checkInputAccess } = require('../middleware/auth');
+const { auth, approverOnly, approverFor, checkInputAccess, getApprovalScopes } = require('../middleware/auth');
 const db = require('../config/database');
 const { logActivity } = require('../utils/logger');
 const {
@@ -35,6 +35,18 @@ async function getApprovalRecipients(jenis) {
         [jenis]
     );
     return recipients;
+}
+
+// Direct-add privilege for record submissions (all types except perilaku,
+// which always applies directly via its own route).
+// - superadmin: always direct.
+// - guru/pegawai: direct ONLY when holding the approval scope for that type.
+// - everyone else (siswa, unscoped staff): goes through the approval queue.
+async function canDirectAdd(userId, userRole, jenis) {
+    if (userRole === 'superadmin') return true;
+    if (userRole !== 'guru' && userRole !== 'pegawai') return false;
+    const scopes = await getApprovalScopes(userId);
+    return scopes.includes(jenis);
 }
 
 // Configure multer for file uploads - use type-specific folders
@@ -139,9 +151,10 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
             }
         }
         
-        // STAFF DIRECT (superadmin/guru/pegawai): approved rows + IPT, skips approval queue
-        if (userRole === 'superadmin' || userRole === 'guru' || userRole === 'pegawai') {
-            console.log('Prestasi - Superadmin direct submission');
+        // DIRECT ADD (superadmin, or guru/pegawai holding the 'prestasi'
+        // approval scope): approved rows + IPT, skips approval queue
+        if (await canDirectAdd(req.user.id, userRole, 'prestasi')) {
+            console.log('Prestasi - Direct submission (privileged)');
             const point = await calculatePrestasiPoints(juara, kategori);
 
             // One transaction for the whole kelompok: all members' rows and
@@ -157,7 +170,7 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
                         [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, sharedFotoPath, point]
                     );
-                    await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query);
+                    await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query, { type: 'prestasi', id: result.insertId });
                     insertedIds.push(result.insertId);
                 }
                 await conn.commit();
@@ -168,15 +181,17 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                 conn.release();
             }
 
-            console.log('Prestasi - Directly added by superadmin:', insertedIds);
+            console.log('Prestasi - Directly added (privileged):', insertedIds);
 
             return res.status(201).json({
                 message: members.length > 1 ? `Prestasi kelompok berhasil ditambahkan untuk ${members.length} siswa` : 'Prestasi berhasil ditambahkan',
-                ids: insertedIds
+                ids: insertedIds,
+                direct: true
             });
         }
 
-        // SISWA: Submit for approval (one row per member, same grup_lomba)
+        // QUEUE: siswa + staff without the approval scope submit for approval
+        // (one row per member, same grup_lomba)
         const insertedIds = [];
         for (const m of members) {
             const [result] = await db.query(
@@ -206,7 +221,8 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
 
         res.status(201).json({
             message: members.length > 1 ? `Prestasi kelompok berhasil diajukan untuk ${members.length} siswa` : 'Prestasi berhasil diajukan untuk persetujuan',
-            ids: insertedIds
+            ids: insertedIds,
+            direct: false
         });
     } catch (error) {
         console.error(error);
@@ -231,9 +247,10 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
         const calculatedClass = studentData[0]?.kelas || '';
 
-        // STAFF DIRECT (superadmin/guru/pegawai): approved insert + IPT change, skips approval queue
-        if (userRole === 'superadmin' || userRole === 'guru' || userRole === 'pegawai') {
-            console.log('Pelanggaran - Superadmin direct submission');
+        // DIRECT ADD (superadmin, or guru/pegawai holding the 'pelanggaran'
+        // approval scope): approved insert + IPT change, skips approval queue
+        if (await canDirectAdd(req.user.id, userRole, 'pelanggaran')) {
+            console.log('Pelanggaran - Direct submission (privileged)');
 
             // Move photo to organized folder if exists
             let finalFotoPath = foto_path;
@@ -256,7 +273,7 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
                 );
                 insertedId = result.insertId;
 
-                await applyIptChange(userId, 'pelanggaran', point, buildKeterangan('pelanggaran', { jenis_pelanggaran }), conn.query);
+                await applyIptChange(userId, 'pelanggaran', point, buildKeterangan('pelanggaran', { jenis_pelanggaran }), conn.query, { type: 'pelanggaran', id: insertedId });
 
                 await conn.commit();
             } catch (error) {
@@ -269,15 +286,16 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
             // Log activity
             await logActivity(req.user.id, 'SUBMIT_PELANGGARAN', `${req.user.nama} (${req.user.role}) directly added pelanggaran for ${nama} (${nis}): ${jenis_pelanggaran}`, req.ip);
 
-            console.log('Pelanggaran - Directly added by superadmin:', insertedId);
+            console.log('Pelanggaran - Directly added (privileged):', insertedId);
 
             return res.status(201).json({
                 message: 'Pelanggaran berhasil ditambahkan',
-                id: insertedId
+                id: insertedId,
+                direct: true
             });
         }
 
-        // SISWA: Submit for approval with pending status
+        // QUEUE: siswa + staff without the approval scope submit with pending status
         const [result] = await db.query(
             `INSERT INTO pelanggaran
             (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi, status)
@@ -292,7 +310,8 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
 
         return res.status(201).json({
             message: 'Pelanggaran berhasil diajukan untuk persetujuan',
-            id: result.insertId
+            id: result.insertId,
+            direct: false
         });
 
     } catch (error) {
@@ -313,9 +332,10 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
         const calculatedClass = studentData[0]?.kelas || '';
         
-        // STAFF DIRECT (superadmin/guru/pegawai): approved insert + IPT change, skips approval queue
-        if (userRole === 'superadmin' || userRole === 'guru' || userRole === 'pegawai') {
-            console.log('Event - Superadmin direct submission');
+        // DIRECT ADD (superadmin, or guru/pegawai holding the 'event'
+        // approval scope): approved insert + IPT change, skips approval queue
+        if (await canDirectAdd(req.user.id, userRole, 'event')) {
+            console.log('Event - Direct submission (privileged)');
             const point = await calculateEventPoints(tingkat);
             
             // Move photo to organized folder if exists
@@ -339,7 +359,7 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
                 );
                 insertedId = result.insertId;
 
-                await applyIptChange(userId, 'event', point, buildKeterangan('event', { nama_event, tingkat }), conn.query);
+                await applyIptChange(userId, 'event', point, buildKeterangan('event', { nama_event, tingkat }), conn.query, { type: 'event', id: insertedId });
 
                 await conn.commit();
             } catch (error) {
@@ -349,15 +369,16 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
                 conn.release();
             }
 
-            console.log('Event - Directly added by superadmin:', insertedId);
+            console.log('Event - Directly added (privileged):', insertedId);
             
             return res.status(201).json({ 
                 message: 'Event berhasil ditambahkan', 
-                id: insertedId 
+                id: insertedId,
+                direct: true
             });
         }
 
-        // SISWA: Submit for approval
+        // QUEUE: siswa + staff without the approval scope submit for approval
         const [result] = await db.query(
             `INSERT INTO event_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, nama_event, tingkat, foto)
@@ -382,7 +403,8 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
 
         res.status(201).json({
             message: 'Event berhasil diajukan untuk persetujuan',
-            id: result.insertId
+            id: result.insertId,
+            direct: false
         });
     } catch (error) {
         console.error(error);
@@ -403,9 +425,10 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
         const calculatedClass = studentData[0]?.kelas || '';
         
-        // STAFF DIRECT (superadmin/guru/pegawai): approved insert + IPT change, skips approval queue
-        if (userRole === 'superadmin' || userRole === 'guru' || userRole === 'pegawai') {
-            console.log('Organisasi - Superadmin direct submission');
+        // DIRECT ADD (superadmin, or guru/pegawai holding the 'organisasi'
+        // approval scope): approved insert + IPT change, skips approval queue
+        if (await canDirectAdd(req.user.id, userRole, 'organisasi')) {
+            console.log('Organisasi - Direct submission (privileged)');
             const point = await calculateOrganisasiPoints(kategori_organisasi, jabatan_organisasi);
             
             // Move photo to organized folder if exists
@@ -434,7 +457,8 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
                     'organisasi',
                     point,
                     buildKeterangan('organisasi', { kategori_organisasi, jabatan_organisasi }),
-                    conn.query
+                    conn.query,
+                    { type: 'organisasi', id: insertedId }
                 );
 
                 await conn.commit();
@@ -445,15 +469,16 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
                 conn.release();
             }
 
-            console.log('Organisasi - Directly added by superadmin:', insertedId);
+            console.log('Organisasi - Directly added (privileged):', insertedId);
             
             return res.status(201).json({ 
                 message: 'Organisasi berhasil ditambahkan', 
-                id: insertedId 
+                id: insertedId,
+                direct: true
             });
         }
         
-        // SISWA: Submit for approval
+        // QUEUE: siswa + staff without the approval scope submit for approval
         const [result] = await db.query(
             `INSERT INTO organisasi_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, jabatan_organisasi, kategori_organisasi, foto)
@@ -478,7 +503,8 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
 
         res.status(201).json({
             message: 'Organisasi berhasil diajukan untuk persetujuan',
-            id: result.insertId
+            id: result.insertId,
+            direct: false
         });
     } catch (error) {
         console.error(error);
@@ -499,9 +525,10 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
         const calculatedClass = studentData[0]?.kelas || '';
         
-        // STAFF DIRECT (superadmin/guru/pegawai): approved insert + IPT change, skips approval queue
-        if (userRole === 'superadmin' || userRole === 'guru' || userRole === 'pegawai') {
-            console.log('Kepanitiaan - Superadmin direct submission');
+        // DIRECT ADD (superadmin, or guru/pegawai holding the 'kepanitiaan'
+        // approval scope): approved insert + IPT change, skips approval queue
+        if (await canDirectAdd(req.user.id, userRole, 'kepanitiaan')) {
+            console.log('Kepanitiaan - Direct submission (privileged)');
             const point = await calculateKepanitiaanPoints(jabatan_kepanitiaan);
             
             // Move photo to organized folder if exists
@@ -530,7 +557,8 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
                     'kepanitiaan',
                     point,
                     buildKeterangan('kepanitiaan', { kategori_kepanitiaan, jabatan_kepanitiaan }),
-                    conn.query
+                    conn.query,
+                    { type: 'kepanitiaan', id: insertedId }
                 );
 
                 await conn.commit();
@@ -541,15 +569,16 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
                 conn.release();
             }
 
-            console.log('Kepanitiaan - Directly added by superadmin:', insertedId);
+            console.log('Kepanitiaan - Directly added (privileged):', insertedId);
             
             return res.status(201).json({ 
                 message: 'Kepanitiaan berhasil ditambahkan', 
-                id: insertedId 
+                id: insertedId,
+                direct: true
             });
         }
         
-        // SISWA: Submit for approval
+        // QUEUE: siswa + staff without the approval scope submit for approval
         const [result] = await db.query(
             `INSERT INTO kepanitiaan_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan, foto)
@@ -574,7 +603,8 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
 
         res.status(201).json({
             message: 'Kepanitiaan berhasil diajukan untuk persetujuan',
-            id: result.insertId
+            id: result.insertId,
+            direct: false
         });
     } catch (error) {
         console.error(error);
@@ -741,7 +771,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
                 insertParams = [data.user_id, data.nama || 'Unknown', data.nis || '', data.kelas || '', data.grha || '', data.jabatan_organisasi || '', data.kategori_organisasi || '', finalFotoPath || null, pointChange];
             }
 
-            await conn.query(insertQuery, insertParams);
+            const [mainRow] = await conn.query(insertQuery, insertParams);
 
             // Keep the submission row pointing at the real file location
             // (the file was just moved to the approved folder above).
@@ -754,7 +784,8 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
                 type,
                 pointChange,
                 buildKeterangan(type, data),
-                conn.query
+                conn.query,
+                { type, id: mainRow.insertId }
             );
 
             // Conditional staging flip: 0 rows means a concurrent decision
@@ -877,7 +908,8 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
                         // jadi langsung dijumlahkan — tanpa tanda minus.
                         data.point_dikurangi,
                         `Pelanggaran: ${data.jenis_pelanggaran}`,
-                        conn.query
+                        conn.query,
+                        { type: 'pelanggaran', id }
                     );
                 } else {
                     await applyPerilakuIptChange(
@@ -885,7 +917,8 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
                         data.point,
                         `Perilaku: ${data.karakter_siswa}`,
                         id,
-                        conn.query
+                        conn.query,
+                        { type: 'perilaku', id }
                     );
                 }
 

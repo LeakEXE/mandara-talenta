@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
-import { Trophy, Users, Award, Clock, ClipboardList, RefreshCw } from 'lucide-react';
+import { Trophy, Users, Award, Clock, ClipboardList, RefreshCw, Eye } from 'lucide-react';
 import { CATEGORY_ICONS, MedalIcon } from './icons';
+import CategoryRecordModal from './CategoryRecordModal';
 
 const SLATE = "var(--slate)";
 
@@ -23,6 +24,18 @@ function Leaderboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [recordTarget, setRecordTarget] = useState(null);
+  // /users/:id/records requires guru/superadmin — siswa sees ranking only.
+  // Pembina rows are teachers (mentored-student totals), not own records.
+  const canViewRecords = (() => {
+    try {
+      const role = JSON.parse(localStorage.getItem('user') || '{}')?.role;
+      return role === 'superadmin' || role === 'guru' || role === 'pegawai';
+    } catch {
+      return false;
+    }
+  })();
+  const showRecordButton = canViewRecords && activeCategory !== 'pembina';
 
   useEffect(() => {
     fetchCategory('prestasi');
@@ -701,6 +714,7 @@ function Leaderboard() {
                     <th>{isPembina ? 'NIP' : 'Kelas'}</th>
                     <th>{isPembina ? 'Jabatan' : 'Grha'}</th>
                     <th>Total Poin</th>
+                    {showRecordButton && <th>Aksi</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -735,6 +749,17 @@ function Leaderboard() {
                           <td><span className="pill kelas">{isPembina ? (s.nip || '-') : s.kelas}</span></td>
                           <td><span className={`pill ${isPembina ? 'jabatan' : 'grha'}`}>{isPembina ? (s.jabatan || s.detail || 'Guru') : (s.grha || '-')}</span></td>
                           <td><span className="points-pill"><Award size={13} /> {s.total_point} poin</span></td>
+                          {showRecordButton && (
+                            <td>
+                              <button
+                                onClick={() => setRecordTarget(s)}
+                                title={`Lihat record ${activeLabel}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                              >
+                                <Eye size={14} /> Detail
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })
@@ -776,6 +801,14 @@ function Leaderboard() {
                         <span className={`pill ${isPembina ? 'jabatan' : 'grha'}`}>{isPembina ? (s.jabatan || s.detail || 'Guru') : (s.grha || '-')}</span>
                       </div>
                       <div className="m-total"><ClipboardList size={13} /> Total poin: <span className="points-pill"><Award size={13} /> {s.total_point} poin</span></div>
+                      {showRecordButton && (
+                        <button
+                          onClick={() => setRecordTarget(s)}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '10px', width: '100%', padding: '10px 12px', background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          <Eye size={15} /> Detail {activeLabel}
+                        </button>
+                      )}
                     </div>
                   );
                 })
@@ -783,6 +816,14 @@ function Leaderboard() {
             </div>
           </div>
         </>
+      )}
+      {recordTarget && (
+        <CategoryRecordModal
+          student={recordTarget}
+          category={activeCategory}
+          totalPoint={recordTarget.total_point}
+          onClose={() => setRecordTarget(null)}
+        />
       )}
     </div>
   );

@@ -37,15 +37,25 @@ async function isUsernameAvailable(username, excludeUserId = null) {
 }
 
 // Auto-generate a username from a person's name. No randomness: the base is
-// the letter-only slug of the name (lowercased, truncated to 20 chars;
-// short/empty names are padded by repeating the slug, e.g. 'bo' -> 'bobob').
+// the letter-only slug of the name, minus the LAST word (usually the family
+// name, which would make it too long), lowercased and truncated to 20 chars:
+// "I Komang Sumawa Adi Putra" -> "ikomangsumawaadi". Short/empty results
+// fall back to the full-name slug, then pad by repeating the slug,
+// e.g. 'bo' -> 'bobob'.
 // Uniqueness (no random suffix):
 //  1. plain slug when free, e.g. 'deanputra';
 //  2. slug + meaningful suffix derived from NIS/NIP (digits mapped a-j),
 //     e.g. 'deanputrabcdef' for NIS 12345 — unique because NIS/NIP is unique;
 //  3. slug + deterministic a, b, ... z, aa, ab... enumeration as last resort.
 function slugFromName(nama) {
-    let slug = String(nama || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, USERNAME_MAX) || 'user';
+    const words = String(nama || '').trim().split(/\s+/).filter(Boolean);
+    // Drop the last word so the base stays short and readable.
+    const dropped = words.length > 1 ? words.slice(0, -1).join('') : (words[0] || '');
+    let slug = dropped.toLowerCase().replace(/[^a-z]/g, '').slice(0, USERNAME_MAX);
+    // Too short after dropping (e.g. "I Putra" -> "i")? Fall back to full name.
+    if (slug.length < USERNAME_MIN) {
+        slug = String(nama || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, USERNAME_MAX) || 'user';
+    }
     while (slug.length < USERNAME_MIN) slug = (slug + slug).slice(0, USERNAME_MIN);
     return slug;
 }

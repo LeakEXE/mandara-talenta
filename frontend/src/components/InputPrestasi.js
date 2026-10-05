@@ -454,10 +454,10 @@ function InputPrestasi() {
 
       const response = await api.post('/approvals/prestasi/submit', data);
 
-      // Use message from backend response (different for superadmin vs regular user)
+      // Backend decides direct-add vs queue (scope-based); use its message.
       setMessage(response.data?.message || 'Data prestasi berhasil dikirim!');
       fetchUserSubmissions();
-      if (userRole === 'superadmin') {
+      if (response.data?.direct) {
         fetchAllPrestasi();
       }
       setFormData({

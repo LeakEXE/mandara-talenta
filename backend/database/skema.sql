@@ -314,9 +314,14 @@ CREATE TABLE ipt_history (
     ipt_sebelum INTEGER NOT NULL,
     ipt_sesudah INTEGER NOT NULL,
     keterangan TEXT,
+    -- Link to the source record (NULL for initial/manual/sync rows).
+    -- Lets record deletes remove exactly their own history rows.
+    record_type TEXT DEFAULT NULL,
+    record_id INTEGER DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_ipt_history_record ON ipt_history (user_id, record_type, record_id);
 
 -- ==================== WALI KELAS TABLES ====================
 

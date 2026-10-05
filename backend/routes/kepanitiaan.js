@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
-const { recomputeAndStoreIpt } = require('../utils/ipt');
+const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -135,6 +135,8 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
             jenis: 'kepanitiaan',
             keterangan: buildKeterangan('kepanitiaan', kepanitiaanData),
             executor: conn.query,
+            recordType: 'kepanitiaan',
+            recordId: kepanitiaanId,
         });
 
         await conn.query(
@@ -162,7 +164,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         const { rejection_reason } = req.body;
         const kepanitiaanId = req.params.id;
 
-        const [rows] = await conn.query('SELECT id, user_id, foto, status FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+        const [rows] = await conn.query('SELECT id, user_id, foto, status, jabatan_kepanitiaan FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
         if (rows.length === 0) {
             await conn.rollback();
             return res.status(404).json({ message: 'Kepanitiaan not found' });
@@ -176,14 +178,17 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.query('UPDATE kepanitiaan SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, kepanitiaanId]);
 
-        // A rejected record stops counting: if it was approved before,
-        // recompute the total (same formula as syncIpt.js).
+        // A rejected record stops counting: recompute WITHOUT a tombstone
+        // row ('*_reject' is not in the ipt_history CHECK list), then remove
+        // every history trace of this record like a delete does.
         if (wasApproved) {
             await recomputeAndStoreIpt(rows[0].user_id, {
                 jenis: 'kepanitiaan_reject',
                 keterangan: `Reject Kepanitiaan: ${rejection_reason || 'Tanpa alasan'}`,
                 executor: conn.query,
+                skipHistory: true,
             });
+            await purgeRecordHistory(rows[0].user_id, 'kepanitiaan', kepanitiaanId, recordLifecycleKeterangans('kepanitiaan', rows[0]), conn.query);
         }
 
         await conn.query(
@@ -265,6 +270,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                     jenis: 'kepanitiaan_update',
                     keterangan: `Update Kepanitiaan: ${jabatan_kepanitiaan}`,
                     executor: conn.query,
+                    recordType: 'kepanitiaan',
+                    recordId: kepanitiaanId,
                 });
             }
 
@@ -316,11 +323,15 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         // also heals any pre-existing drift. Pending/rejected records never
         // touched IPT, so nothing more to do for them.
         if (wasApproved) {
+            // Recompute WITHOUT a tombstone row, then remove every history
+            // trace of this record so it stops showing in history views.
             await recomputeAndStoreIpt(kepanitiaanData.user_id, {
                 jenis: 'kepanitiaan_delete',
                 keterangan: `Delete Kepanitiaan: ${kepanitiaanData.jabatan_kepanitiaan}`,
                 executor: conn.query,
+                skipHistory: true,
             });
+            await purgeRecordHistory(kepanitiaanData.user_id, 'kepanitiaan', kepanitiaanId, recordLifecycleKeterangans('kepanitiaan', kepanitiaanData), conn.query);
         }
 
         // Log activity

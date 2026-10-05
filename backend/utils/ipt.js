@@ -63,14 +63,15 @@ async function resolveStudentIdByNis(nis, fallbackUserId) {
     return rows[0].id;
 }
 
-async function applyIptChange(userId, jenis, pointChange, keterangan, executor = null) {
+async function applyIptChange(userId, jenis, pointChange, keterangan, executor = null, recordRef = null) {
     // Recompute instead of adding: the record mutation (INSERT approved /
     // status flip) must already be visible — via the caller's transaction
     // when executor is given, else committed — so the new total always
     // equals ipt_awal + approved records. Heals pre-existing drift and
     // makes double-apply harmless. `pointChange` is kept for signature
-    // compatibility but no longer drives the math.
-    return recomputeAndStoreIpt(userId, { jenis, keterangan, executor });
+    // compatibility but no longer drives the math. `recordRef` links the
+    // history row to its source record ({ type, id }).
+    return recomputeAndStoreIpt(userId, { jenis, keterangan, executor, recordType: recordRef?.type ?? null, recordId: recordRef?.id ?? null });
 }
 
 // Recompute a student's total from approved records (same formula as
@@ -78,7 +79,7 @@ async function applyIptChange(userId, jenis, pointChange, keterangan, executor =
 // `executor` is a transaction connection's query fn, or null for the pool.
 // The FOR UPDATE lock serializes concurrent mutations of one student when
 // inside a transaction (outside one it is a harmless no-op).
-async function recomputeAndStoreIpt(userId, { jenis, keterangan, executor = null }) {
+async function recomputeAndStoreIpt(userId, { jenis, keterangan, executor = null, recordType = null, recordId = null, skipHistory = false }) {
     const q = executor || db.query;
     const [user] = await q('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [userId]);
     if (user.length === 0) {
@@ -93,16 +94,67 @@ async function recomputeAndStoreIpt(userId, { jenis, keterangan, executor = null
     }
 
     await q('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, userId]);
-    await q(
-        `INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, jenis, iptSesudah - iptSebelum, iptSebelum, iptSesudah, keterangan]
-    );
+    if (!skipHistory) {
+        await q(
+            `INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan, record_type, record_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, jenis, iptSesudah - iptSebelum, iptSebelum, iptSesudah, keterangan, recordType, recordId == null ? null : Number(recordId)]
+        );
+    }
 
     return { iptSebelum, iptSesudah, changed: true };
 }
 
-async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePerilakuId = null, executor = null) {
+// Every keterangan text a record's lifecycle can leave in ipt_history:
+// grant (approve/direct wording), updates, legacy wordings, and old
+// delete-tombstones. Used to purge pre-linkage rows (record_type IS NULL)
+// when a record is deleted — exact strings only, never fuzzy matching.
+const RECORD_LABEL_FIELD = {
+    prestasi: 'nama_lomba',
+    organisasi: 'jabatan_organisasi',
+    kepanitiaan: 'jabatan_kepanitiaan',
+    event: 'nama_event',
+    pelanggaran: 'jenis_pelanggaran',
+    perilaku: 'karakter_siswa'
+};
+
+function recordLifecycleKeterangans(type, data) {
+    const d = data || {};
+    const label = d[RECORD_LABEL_FIELD[type]];
+    const cap = type.charAt(0).toUpperCase() + type.slice(1);
+    const set = new Set([buildKeterangan(type, d)]);
+    if (label) {
+        set.add(`Update ${cap}: ${label}`);
+        set.add(`Delete ${cap}: ${label}`);
+    }
+    if (type === 'prestasi' && d.nama_lomba) {
+        // Wording used by older backend versions (see historyEvidence).
+        set.add(`Poin dari Prestasi: ${d.nama_lomba}`);
+    }
+    return [...set].filter(Boolean);
+}
+
+// Remove every history trace of a deleted record so it stops showing in
+// history views: exact-linked rows (record_type/record_id) plus best-effort
+// pre-linkage rows matching its lifecycle keterangans. Rows of other
+// records, users, and sync/manual/initial entries are never touched.
+async function purgeRecordHistory(userId, recordType, recordId, lifecycleKeterangans, executor = null) {
+    const q = executor || db.query;
+    const rid = recordId == null ? null : Number(recordId);
+    await q(
+        'DELETE FROM ipt_history WHERE user_id = ? AND record_type = ? AND record_id = ?',
+        [userId, recordType, rid]
+    );
+    if (Array.isArray(lifecycleKeterangans) && lifecycleKeterangans.length > 0) {
+        const placeholders = lifecycleKeterangans.map(() => '?').join(', ');
+        await q(
+            `DELETE FROM ipt_history WHERE user_id = ? AND record_type IS NULL AND keterangan IN (${placeholders})`,
+            [userId, ...lifecycleKeterangans]
+        );
+    }
+}
+
+async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePerilakuId = null, executor = null, recordRef = null) {
     const q = executor || db.query;
     const params = [userId, 'approved'];
     let sql = 'SELECT id, point FROM perilaku WHERE user_id = ? AND status = ?';
@@ -125,9 +177,15 @@ async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePeril
     // Only the latest approved perilaku counts (see buildIptCardBreakdown),
     // so recompute converges to the right total however many rows were
     // superseded — no net-diff arithmetic needed.
-    const stored = await recomputeAndStoreIpt(userId, { jenis: 'perilaku', keterangan, executor });
+    const stored = await recomputeAndStoreIpt(userId, {
+        jenis: 'perilaku',
+        keterangan,
+        executor,
+        recordType: recordRef?.type ?? null,
+        recordId: recordRef?.id ?? null,
+    });
 
     return { ...(stored || {}), supersededCount };
 }
 
-module.exports = { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt };
+module.exports = { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans };
