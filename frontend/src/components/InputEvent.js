@@ -283,10 +283,11 @@ function InputEvent() {
         data.append('foto', fileToUpload);
       }
 
-      await api.post('/approvals/event/submit', data);
+      const response = await api.post('/approvals/event/submit', data);
 
-      setMessage(userRole === 'superadmin' ? 'Event berhasil ditambahkan!' : 'Event berhasil diajukan untuk persetujuan!');
-      if (userRole === 'superadmin') {
+      // Backend decides direct-add vs queue (scope-based); use its message.
+      setMessage(response.data?.message || 'Event berhasil dikirim!');
+      if (response.data?.direct) {
         fetchAllEvent();
       }
       setFormData({

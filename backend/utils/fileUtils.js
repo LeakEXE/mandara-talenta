@@ -263,11 +263,26 @@ async function deletePhotoIfOrphan(db, storedValue, opts = {}) {
     }
 }
 
+/**
+ * Resolve any stored evidence shape to the DB-canonical source path
+ * ('uploads/<type>/f') for filesystem operations.
+ * Handles 'uploads/<type>/f', '/uploads/...' (leading slash), and bare
+ * filenames from per-type direct rows. Returns null for empty input.
+ */
+const evidenceSourcePath = (foto, recordType) => {
+    if (!foto) return null;
+    const s = String(foto).replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!s) return null;
+    if (s.toLowerCase().startsWith('uploads/')) return s;
+    return `uploads/${recordType}/${s}`;
+};
+
 module.exports = {
     movePhotoToApprovedFolder,
     deletePhotoFile,
     sanitizePath,
     validatePath,
+    evidenceSourcePath,
     FOTO_REFERENCES,
     normalizeFotoValue,
     collectFotoReferences,

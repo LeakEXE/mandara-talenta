@@ -293,10 +293,11 @@ function InputPelanggaran() {
         data.append('foto', fileToUpload);
       }
 
-      await api.post('/approvals/pelanggaran/submit', data);
+      const response = await api.post('/approvals/pelanggaran/submit', data);
 
-      setMessage(userRole === 'superadmin' ? 'Pelanggaran berhasil ditambahkan!' : 'Pelanggaran berhasil diajukan untuk persetujuan!');
-      if (userRole === 'superadmin') {
+      // Backend decides direct-add vs queue (scope-based); use its message.
+      setMessage(response.data?.message || 'Pelanggaran berhasil dikirim!');
+      if (response.data?.direct) {
         fetchAllPelanggaran();
       }
       setFormData({

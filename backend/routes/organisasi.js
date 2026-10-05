@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -93,17 +94,24 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
 
 // Approve organisasi (superadmin only)
 router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const organisasiId = req.params.id;
-        
-        const [organisasi] = await db.query('SELECT id, user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status, rejection_reason, created_at FROM organisasi WHERE id = ?', [organisasiId]);
+
+        const [organisasi] = await conn.query('SELECT id, user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status, rejection_reason, created_at FROM organisasi WHERE id = ?', [organisasiId]);
         if (organisasi.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Organisasi not found' });
+        }
+        if (organisasi[0].status !== 'pending') {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Organisasi ini sudah diproses' });
         }
 
         const organisasiData = organisasi[0];
         let newFotoPath = organisasiData.foto;
-        
+
         // Move photo to approved folder if it exists
         if (organisasiData.foto) {
             const movedPath = movePhotoToApprovedFolder(path.join('uploads/organisasi', organisasiData.foto), 'organisasi');
@@ -111,58 +119,97 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
                 newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
             }
         }
-        
-        // Update status and photo path
-        await db.query('UPDATE organisasi SET status = ?, foto = ? WHERE id = ?', ['approved', newFotoPath, organisasiId]);
-        
-        // Update user IPT (can go negative due to pelanggaran, can recover with organisasi)
-        const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [organisasiData.user_id]);
-        const iptSebelum = user[0].ipt_total;
-        const iptSesudah = iptSebelum + organisasiData.point;
-        
-        await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, organisasiData.user_id]);
-        
-        await db.query(
-            'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-            [organisasiData.user_id, 'organisasi', organisasiData.point, iptSebelum, iptSesudah, buildKeterangan('organisasi', organisasiData)]
-        );
 
-        await db.query(
+        // Conditional update closes the race between the SELECT above and
+        // this write (two admins approving at once): only one wins.
+        const [updated] = await conn.query('UPDATE organisasi SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, organisasiId, 'pending']);
+        if (updated.affectedRows === 0) {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Organisasi ini sudah diproses' });
+        }
+
+        // Recompute the total from approved records (same formula as
+        // syncIpt.js) — never arithmetic, so double-approvals and drift
+        // are impossible.
+        await recomputeAndStoreIpt(organisasiData.user_id, {
+            jenis: 'organisasi',
+            keterangan: buildKeterangan('organisasi', organisasiData),
+            executor: conn.query,
+            recordType: 'organisasi',
+            recordId: organisasiId,
+        });
+
+        await conn.query(
             'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
             [req.user.id, 'APPROVE_ORGANISASI', `Approved organisasi ID ${organisasiId}`]
         );
 
+        await conn.commit();
+
         res.json({ message: 'Organisasi approved successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
 // Reject organisasi (superadmin only)
 router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const { rejection_reason } = req.body;
         const organisasiId = req.params.id;
-        
-        const [rows] = await db.query('SELECT foto FROM organisasi WHERE id = ?', [organisasiId]);
 
-        await db.query('UPDATE organisasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, organisasiId]);
+        const [rows] = await conn.query('SELECT id, user_id, foto, status, jabatan_organisasi FROM organisasi WHERE id = ?', [organisasiId]);
+        if (rows.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Organisasi not found' });
+        }
+        const wasApproved = rows[0].status === 'approved';
+
+        // Serialize concurrent mutations of this student, then reject.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [rows[0].user_id]);
+        }
+
+        await conn.query('UPDATE organisasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, organisasiId]);
+
+        // A rejected record stops counting: recompute WITHOUT a tombstone
+        // row ('*_reject' is not in the ipt_history CHECK list), then remove
+        // every history trace of this record like a delete does.
+        if (wasApproved) {
+            await recomputeAndStoreIpt(rows[0].user_id, {
+                jenis: 'organisasi_reject',
+                keterangan: `Reject Organisasi: ${rejection_reason || 'Tanpa alasan'}`,
+                executor: conn.query,
+                skipHistory: true,
+            });
+            await purgeRecordHistory(rows[0].user_id, 'organisasi', organisasiId, recordLifecycleKeterangans('organisasi', rows[0]), conn.query);
+        }
+
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'REJECT_ORGANISASI', `Rejected organisasi ID ${organisasiId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         if (rows[0]?.foto) {
             await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'organisasi', id: organisasiId }, folderHint: 'organisasi' });
         }
 
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'REJECT_ORGANISASI', `Rejected organisasi ID ${organisasiId}`]
-        );
-
         res.json({ message: 'Organisasi rejected' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
@@ -202,31 +249,45 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         // Recalculate points if jabatan_organisasi changed
         const point = await calculateOrganisasiPoints(kategori_organisasi, jabatan_organisasi);
 
-        await db.query(
-            'UPDATE organisasi SET nama = ?, nis = ?, kelas = ?, grha = ?, jabatan_organisasi = ?, kategori_organisasi = ?, foto = ?, point = ? WHERE id = ?',
-            [nama, nis, kelas, grha, jabatan_organisasi, kategori_organisasi, foto, point, organisasiId]
-        );
+        const conn = await db.getConnection();
+        try {
+            await conn.beginTransaction();
 
-        // If status is approved and point changed, update user IPT
-        if (organisasiData.status === 'approved' && organisasiData.point !== point) {
-            const pointDiff = point - organisasiData.point;
-            const [userBefore] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [organisasiData.user_id]);
-            const iptSebelum = userBefore[0].ipt_total;
-            const iptSesudah = iptSebelum + pointDiff;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, organisasiData.user_id]);
-            
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [organisasiData.user_id, 'organisasi_update', pointDiff, iptSebelum, iptSesudah, `Update Organisasi: ${jabatan_organisasi}`]
+            const [upd] = await conn.query(
+                'UPDATE organisasi SET nama = ?, nis = ?, kelas = ?, grha = ?, jabatan_organisasi = ?, kategori_organisasi = ?, foto = ?, point = ? WHERE id = ?',
+                [nama, nis, kelas, grha, jabatan_organisasi, kategori_organisasi, foto, point, organisasiId]
             );
-        }
+            if (upd.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(404).json({ message: 'Organisasi not found' });
+            }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'UPDATE_ORGANISASI', `Updated organisasi ID ${organisasiId}`]
-        );
+            // Approved records feed the total: recompute it (same formula as
+            // syncIpt.js) so point edits — and any pre-existing drift — land
+            // exactly. Pending records never touched IPT.
+            if (organisasiData.status === 'approved') {
+                await recomputeAndStoreIpt(organisasiData.user_id, {
+                    jenis: 'organisasi_update',
+                    keterangan: `Update Organisasi: ${jabatan_organisasi}`,
+                    executor: conn.query,
+                    recordType: 'organisasi',
+                    recordId: organisasiId,
+                });
+            }
+
+            // Log activity
+            await conn.query(
+                'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+                [req.user.id, 'UPDATE_ORGANISASI', `Updated organisasi ID ${organisasiId}`]
+            );
+
+            await conn.commit();
+        } catch (error) {
+            try { await conn.rollback(); } catch (_) {}
+            throw error;
+        } finally {
+            conn.release();
+        }
 
         res.json({ message: 'Organisasi updated successfully' });
     } catch (error) {
@@ -237,33 +298,49 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete organisasi (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const organisasiId = req.params.id;
-        
-        const [organisasi] = await db.query('SELECT id, user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status, rejection_reason, created_at FROM organisasi WHERE id = ?', [organisasiId]);
+
+        const [organisasi] = await conn.query('SELECT id, user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status, rejection_reason, created_at FROM organisasi WHERE id = ?', [organisasiId]);
         if (organisasi.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Organisasi not found' });
         }
 
         const organisasiData = organisasi[0];
+        const wasApproved = organisasiData.status === 'approved';
 
-        // If approved, revert IPT change
-        if (organisasiData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [organisasiData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - organisasiData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, organisasiData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [organisasiData.user_id, 'organisasi_delete', -organisasiData.point, iptSebelum, iptSesudah, `Delete Organisasi: ${organisasiData.jabatan_organisasi}`]
-            );
+        // Serialize concurrent mutations of this student, then remove the row.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [organisasiData.user_id]);
+        }
+        await conn.query('DELETE FROM organisasi WHERE id = ?', [organisasiId]);
+
+        // Approved records contributed to the total: recompute it from the
+        // remaining approved records (same formula as syncIpt.js) — this
+        // also heals any pre-existing drift. Pending/rejected records never
+        // touched IPT, so nothing more to do for them.
+        if (wasApproved) {
+            // Recompute WITHOUT a tombstone row, then remove every history
+            // trace of this record so it stops showing in history views.
+            await recomputeAndStoreIpt(organisasiData.user_id, {
+                jenis: 'organisasi_delete',
+                keterangan: `Delete Organisasi: ${organisasiData.jabatan_organisasi}`,
+                executor: conn.query,
+                skipHistory: true,
+            });
+            await purgeRecordHistory(organisasiData.user_id, 'organisasi', organisasiId, recordLifecycleKeterangans('organisasi', organisasiData), conn.query);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM organisasi WHERE id = ?', [organisasiId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_ORGANISASI', `Deleted organisasi ID ${organisasiId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (kelompok siblings may share one file — never strand them).
@@ -271,16 +348,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, organisasiData.foto, { folderHint: 'organisasi' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_ORGANISASI', `Deleted organisasi ID ${organisasiId}`]
-        );
-
         res.json({ message: 'Organisasi deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

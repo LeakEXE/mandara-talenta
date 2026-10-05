@@ -1501,6 +1501,20 @@ p {
     flex: 1 1 100%;
   }
 
+  /* Record modal header: title block full width, Tutup button below it */
+  .record-modal-header {
+    flex-wrap: wrap;
+  }
+
+  .record-modal-header > div:first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .record-modal-header > button {
+    flex: 1 1 100%;
+  }
+
   .modal-sheet {
     padding: 20px 16px;
   }

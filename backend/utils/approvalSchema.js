@@ -39,54 +39,58 @@ async function fetchPendingApprovals(table, alias) {
     return rows;
 }
 
-async function approveSubmission(table, id, notes) {
+async function approveSubmission(table, id, notes, executor = null) {
+    const q = executor || db.query;
     const col = await getApprovalStatusColumn();
     const noteText = notes || 'Disetujui oleh SuperAdmin';
 
     if (col === 'superadmin_status') {
-        await db.query(
+        const [marked] = await q(
             `UPDATE ${table}
              SET superadmin_status = 'approved',
                  superadmin_approved_at = NOW(),
                  superadmin_notes = ?
-             WHERE id = ?`,
+             WHERE id = ? AND superadmin_status = 'pending'`,
             [noteText, id]
         );
-        return;
+        return marked.affectedRows;
     }
 
-    await db.query(
+    const [marked] = await q(
         `UPDATE ${table}
          SET status = 'approved',
              approved_at = NOW(),
              notes = ?
-         WHERE id = ?`,
+         WHERE id = ? AND status = 'pending'`,
         [noteText, id]
     );
+    return marked.affectedRows;
 }
 
-async function rejectSubmission(table, id, notes) {
+async function rejectSubmission(table, id, notes, executor = null) {
+    const q = executor || db.query;
     const col = await getApprovalStatusColumn();
     const noteText = notes || 'Ditolak oleh SuperAdmin';
 
     if (col === 'superadmin_status') {
-        await db.query(
+        const [marked] = await q(
             `UPDATE ${table}
              SET superadmin_status = 'rejected',
                  superadmin_notes = ?
-             WHERE id = ?`,
+             WHERE id = ? AND superadmin_status = 'pending'`,
             [noteText, id]
         );
-        return;
+        return marked.affectedRows;
     }
 
-    await db.query(
+    const [marked] = await q(
         `UPDATE ${table}
          SET status = 'rejected',
              notes = ?
-         WHERE id = ?`,
+         WHERE id = ? AND status = 'pending'`,
         [noteText, id]
     );
+    return marked.affectedRows;
 }
 
 module.exports = {

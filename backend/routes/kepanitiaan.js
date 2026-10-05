@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -92,18 +93,25 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
 });
 
 // Approve kepanitiaan
-router.put('/:id/approve', auth, async (req, res) => {
+router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const kepanitiaanId = req.params.id;
-        
-        const [kepanitiaan] = await db.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+
+        const [kepanitiaan] = await conn.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
         if (kepanitiaan.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Kepanitiaan not found' });
+        }
+        if (kepanitiaan[0].status !== 'pending') {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Kepanitiaan ini sudah diproses' });
         }
 
         const kepanitiaanData = kepanitiaan[0];
         let newFotoPath = kepanitiaanData.foto;
-        
+
         // Move photo to approved folder if it exists
         if (kepanitiaanData.foto) {
             const movedPath = movePhotoToApprovedFolder(path.join('uploads/kepanitiaan', kepanitiaanData.foto), 'kepanitiaan');
@@ -111,58 +119,97 @@ router.put('/:id/approve', auth, async (req, res) => {
                 newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
             }
         }
-        
-        // Update status and photo path
-        await db.query('UPDATE kepanitiaan SET status = ?, foto = ? WHERE id = ?', ['approved', newFotoPath, kepanitiaanId]);
-        
-        // Update user IPT (can go negative due to pelanggaran, can recover with kepanitiaan)
-        const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [kepanitiaanData.user_id]);
-        const iptSebelum = user[0].ipt_total;
-        const iptSesudah = iptSebelum + kepanitiaanData.point;
-        
-        await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, kepanitiaanData.user_id]);
-        
-        await db.query(
-            'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-            [kepanitiaanData.user_id, 'kepanitiaan', kepanitiaanData.point, iptSebelum, iptSesudah, buildKeterangan('kepanitiaan', kepanitiaanData)]
-        );
 
-        await db.query(
+        // Conditional update closes the race between the SELECT above and
+        // this write (two admins approving at once): only one wins.
+        const [updated] = await conn.query('UPDATE kepanitiaan SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, kepanitiaanId, 'pending']);
+        if (updated.affectedRows === 0) {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Kepanitiaan ini sudah diproses' });
+        }
+
+        // Recompute the total from approved records (same formula as
+        // syncIpt.js) — never arithmetic, so double-approvals and drift
+        // are impossible.
+        await recomputeAndStoreIpt(kepanitiaanData.user_id, {
+            jenis: 'kepanitiaan',
+            keterangan: buildKeterangan('kepanitiaan', kepanitiaanData),
+            executor: conn.query,
+            recordType: 'kepanitiaan',
+            recordId: kepanitiaanId,
+        });
+
+        await conn.query(
             'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
             [req.user.id, 'APPROVE_KEPANITIAAN', `Approved kepanitiaan ID ${kepanitiaanId}`]
         );
 
+        await conn.commit();
+
         res.json({ message: 'Kepanitiaan approved successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
 // Reject kepanitiaan
-router.put('/:id/reject', auth, async (req, res) => {
+router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const { rejection_reason } = req.body;
         const kepanitiaanId = req.params.id;
-        
-        const [rows] = await db.query('SELECT foto FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
 
-        await db.query('UPDATE kepanitiaan SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, kepanitiaanId]);
+        const [rows] = await conn.query('SELECT id, user_id, foto, status, jabatan_kepanitiaan FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+        if (rows.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Kepanitiaan not found' });
+        }
+        const wasApproved = rows[0].status === 'approved';
+
+        // Serialize concurrent mutations of this student, then reject.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [rows[0].user_id]);
+        }
+
+        await conn.query('UPDATE kepanitiaan SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, kepanitiaanId]);
+
+        // A rejected record stops counting: recompute WITHOUT a tombstone
+        // row ('*_reject' is not in the ipt_history CHECK list), then remove
+        // every history trace of this record like a delete does.
+        if (wasApproved) {
+            await recomputeAndStoreIpt(rows[0].user_id, {
+                jenis: 'kepanitiaan_reject',
+                keterangan: `Reject Kepanitiaan: ${rejection_reason || 'Tanpa alasan'}`,
+                executor: conn.query,
+                skipHistory: true,
+            });
+            await purgeRecordHistory(rows[0].user_id, 'kepanitiaan', kepanitiaanId, recordLifecycleKeterangans('kepanitiaan', rows[0]), conn.query);
+        }
+
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'REJECT_KEPANITIAAN', `Rejected kepanitiaan ID ${kepanitiaanId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         if (rows[0]?.foto) {
             await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'kepanitiaan', id: kepanitiaanId }, folderHint: 'kepanitiaan' });
         }
 
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'REJECT_KEPANITIAAN', `Rejected kepanitiaan ID ${kepanitiaanId}`]
-        );
-
         res.json({ message: 'Kepanitiaan rejected' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
@@ -202,31 +249,45 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         // Recalculate points if jabatan_kepanitiaan changed
         const point = await calculateKepanitiaanPoints(jabatan_kepanitiaan);
 
-        await db.query(
-            'UPDATE kepanitiaan SET nama = ?, nis = ?, kelas = ?, grha = ?, jabatan_kepanitiaan = ?, kategori_kepanitiaan = ?, foto = ?, point = ? WHERE id = ?',
-            [nama, nis, kelas, grha, jabatan_kepanitiaan, kategori_kepanitiaan, foto, point, kepanitiaanId]
-        );
+        const conn = await db.getConnection();
+        try {
+            await conn.beginTransaction();
 
-        // If status is approved and point changed, update user IPT
-        if (kepanitiaanData.status === 'approved' && kepanitiaanData.point !== point) {
-            const pointDiff = point - kepanitiaanData.point;
-            const [userBefore] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [kepanitiaanData.user_id]);
-            const iptSebelum = userBefore[0].ipt_total;
-            const iptSesudah = iptSebelum + pointDiff;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, kepanitiaanData.user_id]);
-            
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [kepanitiaanData.user_id, 'kepanitiaan_update', pointDiff, iptSebelum, iptSesudah, `Update Kepanitiaan: ${jabatan_kepanitiaan}`]
+            const [upd] = await conn.query(
+                'UPDATE kepanitiaan SET nama = ?, nis = ?, kelas = ?, grha = ?, jabatan_kepanitiaan = ?, kategori_kepanitiaan = ?, foto = ?, point = ? WHERE id = ?',
+                [nama, nis, kelas, grha, jabatan_kepanitiaan, kategori_kepanitiaan, foto, point, kepanitiaanId]
             );
-        }
+            if (upd.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(404).json({ message: 'Kepanitiaan not found' });
+            }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'UPDATE_KEPANITIAAN', `Updated kepanitiaan ID ${kepanitiaanId}`]
-        );
+            // Approved records feed the total: recompute it (same formula as
+            // syncIpt.js) so point edits — and any pre-existing drift — land
+            // exactly. Pending records never touched IPT.
+            if (kepanitiaanData.status === 'approved') {
+                await recomputeAndStoreIpt(kepanitiaanData.user_id, {
+                    jenis: 'kepanitiaan_update',
+                    keterangan: `Update Kepanitiaan: ${jabatan_kepanitiaan}`,
+                    executor: conn.query,
+                    recordType: 'kepanitiaan',
+                    recordId: kepanitiaanId,
+                });
+            }
+
+            // Log activity
+            await conn.query(
+                'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+                [req.user.id, 'UPDATE_KEPANITIAAN', `Updated kepanitiaan ID ${kepanitiaanId}`]
+            );
+
+            await conn.commit();
+        } catch (error) {
+            try { await conn.rollback(); } catch (_) {}
+            throw error;
+        } finally {
+            conn.release();
+        }
 
         res.json({ message: 'Kepanitiaan updated successfully' });
     } catch (error) {
@@ -237,33 +298,49 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
 // Delete kepanitiaan (superadmin only)
 router.delete('/:id', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const kepanitiaanId = req.params.id;
-        
-        const [kepanitiaan] = await db.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+
+        const [kepanitiaan] = await conn.query('SELECT * FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
         if (kepanitiaan.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Kepanitiaan not found' });
         }
 
         const kepanitiaanData = kepanitiaan[0];
+        const wasApproved = kepanitiaanData.status === 'approved';
 
-        // If approved, revert IPT change
-        if (kepanitiaanData.status === 'approved') {
-            const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [kepanitiaanData.user_id]);
-            const iptSebelum = user[0].ipt_total;
-            const iptSesudah = iptSebelum - kepanitiaanData.point;
-            
-            await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, kepanitiaanData.user_id]);
-            
-            // Log IPT history
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [kepanitiaanData.user_id, 'kepanitiaan_delete', -kepanitiaanData.point, iptSebelum, iptSesudah, `Delete Kepanitiaan: ${kepanitiaanData.jabatan_kepanitiaan}`]
-            );
+        // Serialize concurrent mutations of this student, then remove the row.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [kepanitiaanData.user_id]);
+        }
+        await conn.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+
+        // Approved records contributed to the total: recompute it from the
+        // remaining approved records (same formula as syncIpt.js) — this
+        // also heals any pre-existing drift. Pending/rejected records never
+        // touched IPT, so nothing more to do for them.
+        if (wasApproved) {
+            // Recompute WITHOUT a tombstone row, then remove every history
+            // trace of this record so it stops showing in history views.
+            await recomputeAndStoreIpt(kepanitiaanData.user_id, {
+                jenis: 'kepanitiaan_delete',
+                keterangan: `Delete Kepanitiaan: ${kepanitiaanData.jabatan_kepanitiaan}`,
+                executor: conn.query,
+                skipHistory: true,
+            });
+            await purgeRecordHistory(kepanitiaanData.user_id, 'kepanitiaan', kepanitiaanId, recordLifecycleKeterangans('kepanitiaan', kepanitiaanData), conn.query);
         }
 
-        // Delete from database
-        await db.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'DELETE_KEPANITIAAN', `Deleted kepanitiaan ID ${kepanitiaanId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         // (kelompok siblings may share one file — never strand them).
@@ -271,16 +348,13 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
             await deletePhotoIfOrphan(db, kepanitiaanData.foto, { folderHint: 'kepanitiaan' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'DELETE_KEPANITIAAN', `Deleted kepanitiaan ID ${kepanitiaanId}`]
-        );
-
         res.json({ message: 'Kepanitiaan deleted successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 

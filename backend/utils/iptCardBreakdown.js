@@ -89,8 +89,14 @@ function calculateBreakdownTotal(points) {
     return total;
 }
 
-async function buildIptCardBreakdown(userId, cutoff = null) {
-    const [students] = await db.query(
+async function buildIptCardBreakdown(userId, cutoff = null, queryFn = null) {
+    // Optional query executor (e.g. a transaction connection's query fn).
+    // Record reads go through it so callers inside a transaction observe
+    // their own uncommitted writes; config lookups (ipt_config, levels)
+    // stay on the pool via lookupPerilakuPoint — those tables are never
+    // mutated inside such a transaction. Defaults to the pool.
+    const q = queryFn || db.query;
+    const [students] = await q(
         `SELECT id, nama, nis, kelas, grha, ipt_total, ipt_awal
          FROM users
          WHERE id = ? AND role = 'siswa'`,
@@ -109,31 +115,31 @@ async function buildIptCardBreakdown(userId, cutoff = null) {
     const before = cutoff ? ' AND created_at < ?' : '';
     const beforeParam = (params) => (cutoff ? [...params, cutoff] : params);
 
-    const [prestasi] = await db.query(
+    const [prestasi] = await q(
         `SELECT point FROM prestasi WHERE user_id = ? AND status = 'approved'${before}`,
         beforeParam([userId])
     );
     points.prestasi = prestasi.reduce((sum, row) => sum + (row.point || 0), 0);
 
-    const [organisasi] = await db.query(
+    const [organisasi] = await q(
         `SELECT point FROM organisasi WHERE user_id = ? AND status = 'approved'${before}`,
         beforeParam([userId])
     );
     points.organisasi = organisasi.reduce((sum, row) => sum + (row.point || 0), 0);
 
-    const [kepanitiaan] = await db.query(
+    const [kepanitiaan] = await q(
         `SELECT point FROM kepanitiaan WHERE user_id = ? AND status = 'approved'${before}`,
         beforeParam([userId])
     );
     points.kepanitiaan = kepanitiaan.reduce((sum, row) => sum + (row.point || 0), 0);
 
-    const [event] = await db.query(
+    const [event] = await q(
         `SELECT point FROM event WHERE user_id = ? AND status = 'approved'${before}`,
         beforeParam([userId])
     );
     points.event = event.reduce((sum, row) => sum + (row.point || 0), 0);
 
-    const [levels] = await db.query(
+    const [levels] = await q(
         'SELECT id, name, point_value, is_active FROM ipt_pelanggaran_level'
     );
 
@@ -141,7 +147,7 @@ async function buildIptCardBreakdown(userId, cutoff = null) {
     // dipetakan: detail -> tingkat, dengan fallback nama record = nama tingkat
     // (data lama). created_at perlu diberi alias p. karena ada banyak tabel.
     const beforeP = cutoff ? ' AND p.created_at < ?' : '';
-    const [pelanggaran] = await db.query(
+    const [pelanggaran] = await q(
         `SELECT p.jenis_pelanggaran, p.point_dikurangi,
                 COALESCE(d.level_id, by_name.id) AS level_id
          FROM pelanggaran p
@@ -202,7 +208,7 @@ async function buildIptCardBreakdown(userId, cutoff = null) {
 
     // Perilaku memakai penilaian TERAKHIR; dengan cutoff berarti
     // penilaian terakhir SEBELUM tanggal cutoff (kondisi saat itu).
-    const [perilaku] = await db.query(
+    const [perilaku] = await q(
         `SELECT karakter_siswa, point FROM perilaku
          WHERE user_id = ? AND status = 'approved'${before}
          ORDER BY created_at DESC LIMIT 1`,
