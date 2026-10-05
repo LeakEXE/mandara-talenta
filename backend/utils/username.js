@@ -47,15 +47,26 @@ async function isUsernameAvailable(username, excludeUserId = null) {
 //  2. slug + meaningful suffix derived from NIS/NIP (digits mapped a-j),
 //     e.g. 'deanputrabcdef' for NIS 12345 — unique because NIS/NIP is unique;
 //  3. slug + deterministic a, b, ... z, aa, ab... enumeration as last resort.
+// Academic degrees/titles are not part of a username: cut everything from
+// the first comma on ("Dipa, S.Pd." -> "Dipa"), then drop any leftover
+// degree-like tokens (letter groups containing periods: "S.Pd", "M.Pd.",
+// "S.Kom", "S.E" ...) for names written without a comma. Plain initials
+// without periods ("I", "Ni", "A") are kept.
+function stripDegrees(nama) {
+    const beforeComma = String(nama || '').split(',')[0];
+    return beforeComma.split(/\s+/).filter((w) => !/[a-z]\./i.test(w)).join(' ');
+}
+
 function slugFromName(nama) {
-    const full = String(nama || '').toLowerCase().replace(/[^a-z]/g, '');
+    const clean = stripDegrees(nama);
+    const full = clean.toLowerCase().replace(/[^a-z]/g, '');
     if (full.length <= USERNAME_MAX) {
         let slug = full || 'user';
         while (slug.length < USERNAME_MIN) slug = (slug + slug).slice(0, USERNAME_MIN);
         return slug;
     }
     // Overlong: drop the last word, truncate to 20 as a last resort.
-    const words = String(nama || '').trim().split(/\s+/).filter(Boolean);
+    const words = clean.trim().split(/\s+/).filter(Boolean);
     let slug = (words.length > 1 ? words.slice(0, -1).join('') : (words[0] || ''))
         .toLowerCase().replace(/[^a-z]/g, '').slice(0, USERNAME_MAX);
     if (slug.length < USERNAME_MIN) {
