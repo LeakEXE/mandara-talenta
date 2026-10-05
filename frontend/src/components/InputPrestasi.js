@@ -193,14 +193,20 @@ function InputPrestasi() {
   const handleUpdate = async () => {
     editModal.setIsLoading(true);
     try {
-      const updateData = {};
+      const data = new FormData();
       Object.keys(editModal.editFormData).forEach(key => {
         if (key !== 'id' && key !== 'created_at' && key !== 'status' && key !== 'user_id') {
-          updateData[key] = editModal.editFormData[key];
+          data.append(key, editModal.editFormData[key]);
         }
       });
-      
-      await api.put(`/prestasi/${editModal.editingItem.id}`, updateData);
+      if (editModal.editFoto) {
+        const fileToUpload = editModal.editFormData.nis
+          ? new File([editModal.editFoto], `${editModal.editFormData.nis}_${editModal.editFoto.name}`, { type: editModal.editFoto.type })
+          : editModal.editFoto;
+        data.append('foto', fileToUpload);
+      }
+
+      await api.put(`/prestasi/${editModal.editingItem.id}`, data);
       setMessage('Prestasi berhasil diperbarui!');
       fetchAllPrestasi();
       editModal.closeEditModal();
@@ -209,6 +215,22 @@ function InputPrestasi() {
     } finally {
       editModal.setIsLoading(false);
     }
+  };
+
+  const handleEditFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) {
+      editModal.setEditFoto(null);
+      return;
+    }
+    const err = validateEvidenceFile(file);
+    if (err) {
+      setMessage(err);
+      editModal.setEditFoto(null);
+      e.target.value = '';
+      return;
+    }
+    editModal.setEditFoto(file);
   };
 
   const checkAccess = async () => {
@@ -968,6 +990,15 @@ function InputPrestasi() {
               <option key={tingkat} value={tingkat}>{formatDisplayText(tingkat)}</option>
             ))}
           </select>
+        </div>
+
+        <div className="form-group">
+          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <input
+            type="file"
+            onChange={handleEditFileChange}
+            accept="image/*,.pdf"
+          />
         </div>
       </EditModal>
 
