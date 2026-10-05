@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
-const { buildIptCardBreakdown } = require('../utils/iptCardBreakdown');
+const { recomputeAndStoreIpt } = require('../utils/ipt');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -110,17 +110,24 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
 
 // Approve prestasi (superadmin only)
 router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const prestasiId = req.params.id;
-        
-        const [prestasi] = await db.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
+
+        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
         if (prestasi.length === 0) {
+            await conn.rollback();
             return res.status(404).json({ message: 'Prestasi not found' });
+        }
+        if (prestasi[0].status !== 'pending') {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Prestasi ini sudah diproses' });
         }
 
         const prestasiData = prestasi[0];
         let newFotoPath = prestasiData.foto;
-        
+
         // Move photo to approved folder if it exists
         if (prestasiData.foto) {
             const movedPath = movePhotoToApprovedFolder(path.join('uploads/prestasi', prestasiData.foto), 'prestasi');
@@ -128,61 +135,94 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
                 newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
             }
         }
-        
-        // Update status and photo path
-        await db.query('UPDATE prestasi SET status = ?, foto = ? WHERE id = ?', ['approved', newFotoPath, prestasiId]);
-        
-        // Update user IPT (can go negative due to pelanggaran, can recover with prestasi)
-        const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [prestasiData.user_id]);
-        const iptSebelum = user[0].ipt_total;
-        const iptSesudah = iptSebelum + prestasiData.point;
-        
-        await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, prestasiData.user_id]);
-        
-        // Log IPT history
-        await db.query(
-            'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-            [prestasiData.user_id, 'prestasi', prestasiData.point, iptSebelum, iptSesudah, buildKeterangan('prestasi', prestasiData)]
-        );
+
+        // Conditional update closes the race between the SELECT above and
+        // this write (two admins approving at once): only one wins.
+        const [updated] = await conn.query('UPDATE prestasi SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, prestasiId, 'pending']);
+        if (updated.affectedRows === 0) {
+            await conn.rollback();
+            return res.status(400).json({ message: 'Prestasi ini sudah diproses' });
+        }
+
+        // Recompute the total from approved records (same formula as
+        // syncIpt.js) — never arithmetic, so double-approvals and drift
+        // are impossible.
+        await recomputeAndStoreIpt(prestasiData.user_id, {
+            jenis: 'prestasi',
+            keterangan: buildKeterangan('prestasi', prestasiData),
+            executor: conn.query,
+        });
 
         // Log activity
-        await db.query(
+        await conn.query(
             'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
             [req.user.id, 'APPROVE_PRESTASI', `Approved prestasi ID ${prestasiId}`]
         );
 
+        await conn.commit();
+
         res.json({ message: 'Prestasi approved successfully' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
 // Reject prestasi (superadmin only)
 router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
+    const conn = await db.getConnection();
     try {
+        await conn.beginTransaction();
         const { rejection_reason } = req.body;
         const prestasiId = req.params.id;
-        
-        const [rows] = await db.query('SELECT foto FROM prestasi WHERE id = ?', [prestasiId]);
 
-        await db.query('UPDATE prestasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, prestasiId]);
+        const [rows] = await conn.query('SELECT id, user_id, foto, status FROM prestasi WHERE id = ?', [prestasiId]);
+        if (rows.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ message: 'Prestasi not found' });
+        }
+        const wasApproved = rows[0].status === 'approved';
+
+        // Serialize concurrent mutations of this student, then reject.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [rows[0].user_id]);
+        }
+
+        await conn.query('UPDATE prestasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, prestasiId]);
+
+        // A rejected record stops counting: if it was approved before,
+        // recompute the total (same formula as syncIpt.js).
+        if (wasApproved) {
+            await recomputeAndStoreIpt(rows[0].user_id, {
+                jenis: 'prestasi_reject',
+                keterangan: `Reject Prestasi: ${rejection_reason || 'Tanpa alasan'}`,
+                executor: conn.query,
+            });
+        }
+
+        // Log activity
+        await conn.query(
+            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+            [req.user.id, 'REJECT_PRESTASI', `Rejected prestasi ID ${prestasiId}`]
+        );
+
+        await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
         if (rows[0]?.foto) {
             await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'prestasi', id: prestasiId }, folderHint: 'prestasi' });
         }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'REJECT_PRESTASI', `Rejected prestasi ID ${prestasiId}`]
-        );
-
         res.json({ message: 'Prestasi rejected' });
     } catch (error) {
+        try { await conn.rollback(); } catch (_) {}
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    } finally {
+        conn.release();
     }
 });
 
@@ -225,27 +265,43 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         // Keep pembina link consistent when the name changes
         const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(req.body.pembina_id, pembina);
 
-        await db.query(
-            'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, point = ? WHERE id = ?',
-            [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point, prestasiId]
-        );
+        const conn = await db.getConnection();
+        try {
+            await conn.beginTransaction();
 
-        // If status is approved and point changed, update user IPT
-        if (prestasiData.status === 'approved' && prestasiData.point !== point) {
-            const pointDiff = point - prestasiData.point;
-            await db.query('UPDATE users SET ipt_total = ipt_total + ? WHERE id = ?', [pointDiff, prestasiData.user_id]);
-            
-            await db.query(
-                'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                [prestasiData.user_id, 'prestasi_update', pointDiff, prestasiData.ipt_sebelum || prestasiData.ipt_total, prestasiData.ipt_total + pointDiff, `Update Prestasi: ${nama_lomba}`]
+            const [upd] = await conn.query(
+                'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, point = ? WHERE id = ?',
+                [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point, prestasiId]
             );
-        }
+            if (upd.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(404).json({ message: 'Prestasi not found' });
+            }
 
-        // Log activity
-        await db.query(
-            'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
-            [req.user.id, 'UPDATE_PRESTASI', `Updated prestasi ID ${prestasiId}`]
-        );
+            // Approved records feed the total: recompute it (same formula as
+            // syncIpt.js) so point edits — and any pre-existing drift — land
+            // exactly. Pending records never touched IPT.
+            if (prestasiData.status === 'approved') {
+                await recomputeAndStoreIpt(prestasiData.user_id, {
+                    jenis: 'prestasi_update',
+                    keterangan: `Update Prestasi: ${nama_lomba}`,
+                    executor: conn.query,
+                });
+            }
+
+            // Log activity
+            await conn.query(
+                'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
+                [req.user.id, 'UPDATE_PRESTASI', `Updated prestasi ID ${prestasiId}`]
+            );
+
+            await conn.commit();
+        } catch (error) {
+            try { await conn.rollback(); } catch (_) {}
+            throw error;
+        } finally {
+            conn.release();
+        }
 
         res.json({ message: 'Prestasi updated successfully' });
     } catch (error) {
@@ -268,30 +324,24 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         }
 
         const prestasiData = prestasi[0];
+        const wasApproved = prestasiData.status === 'approved';
 
-        // If approved, delete the row first, then recompute the student's
-        // total from the remaining approved records (same formula as
-        // syncIpt.js) — this also heals any pre-existing drift.
-        if (prestasiData.status === 'approved') {
-            const [user] = await conn.query('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [prestasiData.user_id]);
-            await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
-            if (user.length > 0) {
-                const iptSebelum = user[0].ipt_total;
-                const card = await buildIptCardBreakdown(prestasiData.user_id, null, conn.query);
-                const iptSesudah = card ? card.breakdown_total : iptSebelum;
-                if (iptSesudah !== iptSebelum) {
-                    await conn.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, prestasiData.user_id]);
+        // Serialize concurrent mutations of this student, then remove the row.
+        if (wasApproved) {
+            await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [prestasiData.user_id]);
+        }
+        await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
 
-                    // Log IPT history
-                    await conn.query(
-                        'INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan) VALUES (?, ?, ?, ?, ?, ?)',
-                        [prestasiData.user_id, 'prestasi_delete', iptSesudah - iptSebelum, iptSebelum, iptSesudah, `Delete Prestasi: ${prestasiData.nama_lomba}`]
-                    );
-                }
-            }
-        } else {
-            // Pending/rejected records never touched IPT — just remove the row.
-            await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
+        // Approved records contributed to the total: recompute it from the
+        // remaining approved records (same formula as syncIpt.js) — this
+        // also heals any pre-existing drift. Pending/rejected records never
+        // touched IPT, so nothing more to do for them.
+        if (wasApproved) {
+            await recomputeAndStoreIpt(prestasiData.user_id, {
+                jenis: 'prestasi_delete',
+                keterangan: `Delete Prestasi: ${prestasiData.nama_lomba}`,
+                executor: conn.query,
+            });
         }
 
         // Log activity

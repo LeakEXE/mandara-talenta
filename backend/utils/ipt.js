@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { buildIptCardBreakdown } = require('./iptCardBreakdown');
 
 // Resolve a pembina to { id, nama } from either a guru user id or a name.
 // Returns { id: null, nama: fallback } when unresolvable (caller decides).
@@ -62,27 +63,47 @@ async function resolveStudentIdByNis(nis, fallbackUserId) {
     return rows[0].id;
 }
 
-async function applyIptChange(userId, jenis, pointChange, keterangan) {
-    const [user] = await db.query('SELECT ipt_total FROM users WHERE id = ?', [userId]);
+async function applyIptChange(userId, jenis, pointChange, keterangan, executor = null) {
+    // Recompute instead of adding: the record mutation (INSERT approved /
+    // status flip) must already be visible — via the caller's transaction
+    // when executor is given, else committed — so the new total always
+    // equals ipt_awal + approved records. Heals pre-existing drift and
+    // makes double-apply harmless. `pointChange` is kept for signature
+    // compatibility but no longer drives the math.
+    return recomputeAndStoreIpt(userId, { jenis, keterangan, executor });
+}
+
+// Recompute a student's total from approved records (same formula as
+// syncIpt.js) and store it when different, with an audit history row.
+// `executor` is a transaction connection's query fn, or null for the pool.
+// The FOR UPDATE lock serializes concurrent mutations of one student when
+// inside a transaction (outside one it is a harmless no-op).
+async function recomputeAndStoreIpt(userId, { jenis, keterangan, executor = null }) {
+    const q = executor || db.query;
+    const [user] = await q('SELECT ipt_total FROM users WHERE id = ? FOR UPDATE', [userId]);
     if (user.length === 0) {
         return null;
     }
 
     const iptSebelum = user[0].ipt_total;
-    // Allow negative IPT values - remove the minimum constraint
-    const iptBaru = iptSebelum + pointChange;
+    const card = await buildIptCardBreakdown(userId, null, executor);
+    const iptSesudah = card ? card.breakdown_total : iptSebelum;
+    if (iptSesudah === iptSebelum) {
+        return { iptSebelum, iptSesudah, changed: false };
+    }
 
-    await db.query('UPDATE users SET ipt_total = ? WHERE id = ?', [iptBaru, userId]);
-    await db.query(
+    await q('UPDATE users SET ipt_total = ? WHERE id = ?', [iptSesudah, userId]);
+    await q(
         `INSERT INTO ipt_history (user_id, jenis_perubahan, point_change, ipt_sebelum, ipt_sesudah, keterangan)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [userId, jenis, pointChange, iptSebelum, iptBaru, keterangan]
+        [userId, jenis, iptSesudah - iptSebelum, iptSebelum, iptSesudah, keterangan]
     );
 
-    return { iptSebelum, iptBaru };
+    return { iptSebelum, iptSesudah, changed: true };
 }
 
-async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePerilakuId = null) {
+async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePerilakuId = null, executor = null) {
+    const q = executor || db.query;
     const params = [userId, 'approved'];
     let sql = 'SELECT id, point FROM perilaku WHERE user_id = ? AND status = ?';
     if (excludePerilakuId) {
@@ -90,23 +111,23 @@ async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePeril
         params.push(excludePerilakuId);
     }
 
-    const [previous] = await db.query(sql, params);
-    let reversedPoints = 0;
+    const [previous] = await q(sql, params);
+    let supersededCount = 0;
 
     for (const old of previous) {
-        reversedPoints += old.point || 0;
-        await db.query(
+        await q(
             `UPDATE perilaku SET status = 'rejected', rejection_reason = ? WHERE id = ?`,
             ['Diganti oleh penilaian perilaku baru', old.id]
         );
+        supersededCount++;
     }
 
-    const netChange = (newPoint || 0) - reversedPoints;
-    if (netChange !== 0) {
-        await applyIptChange(userId, 'perilaku', netChange, keterangan);
-    }
+    // Only the latest approved perilaku counts (see buildIptCardBreakdown),
+    // so recompute converges to the right total however many rows were
+    // superseded — no net-diff arithmetic needed.
+    const stored = await recomputeAndStoreIpt(userId, { jenis: 'perilaku', keterangan, executor });
 
-    return { netChange, supersededCount: previous.length };
+    return { ...(stored || {}), supersededCount };
 }
 
-module.exports = { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan };
+module.exports = { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt };

@@ -144,16 +144,28 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
             console.log('Prestasi - Superadmin direct submission');
             const point = await calculatePrestasiPoints(juara, kategori);
 
+            // One transaction for the whole kelompok: all members' rows and
+            // IPT updates commit atomically, never partially.
+            const conn = await db.getConnection();
             const insertedIds = [];
-            for (const m of members) {
-                const [result] = await db.query(
-                    `INSERT INTO prestasi
-                    (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                    [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, sharedFotoPath, point]
-                );
-                await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }));
-                insertedIds.push(result.insertId);
+            try {
+                await conn.beginTransaction();
+                for (const m of members) {
+                    const [result] = await conn.query(
+                        `INSERT INTO prestasi
+                        (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, sharedFotoPath, point]
+                    );
+                    await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query);
+                    insertedIds.push(result.insertId);
+                }
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
             }
 
             console.log('Prestasi - Directly added by superadmin:', insertedIds);
@@ -232,23 +244,36 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
                 }
             }
 
-            const [result] = await db.query(
-                `INSERT INTO pelanggaran
-                (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, finalFotoPath, jenis_pelanggaran, point]
-            );
+            const conn = await db.getConnection();
+            let insertedId = null;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO pelanggaran
+                    (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                    [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, finalFotoPath, jenis_pelanggaran, point]
+                );
+                insertedId = result.insertId;
 
-            await applyIptChange(userId, 'pelanggaran', point, buildKeterangan('pelanggaran', { jenis_pelanggaran }));
+                await applyIptChange(userId, 'pelanggaran', point, buildKeterangan('pelanggaran', { jenis_pelanggaran }), conn.query);
+
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
+            }
 
             // Log activity
             await logActivity(req.user.id, 'SUBMIT_PELANGGARAN', `${req.user.nama} (${req.user.role}) directly added pelanggaran for ${nama} (${nis}): ${jenis_pelanggaran}`, req.ip);
 
-            console.log('Pelanggaran - Directly added by superadmin:', result.insertId);
+            console.log('Pelanggaran - Directly added by superadmin:', insertedId);
 
             return res.status(201).json({
                 message: 'Pelanggaran berhasil ditambahkan',
-                id: result.insertId
+                id: insertedId
             });
         }
 
@@ -302,20 +327,33 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
                 }
             }
             
-            const [result] = await db.query(
-                `INSERT INTO event 
-                (user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                [userId, nama, nis, calculatedClass, grha, nama_event, tingkat, finalFotoPath, point]
-            );
-            
-            await applyIptChange(userId, 'event', point, buildKeterangan('event', { nama_event, tingkat }));
-            
-            console.log('Event - Directly added by superadmin:', result.insertId);
+            const conn = await db.getConnection();
+            let insertedId = null;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO event 
+                    (user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                    [userId, nama, nis, calculatedClass, grha, nama_event, tingkat, finalFotoPath, point]
+                );
+                insertedId = result.insertId;
+
+                await applyIptChange(userId, 'event', point, buildKeterangan('event', { nama_event, tingkat }), conn.query);
+
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
+            }
+
+            console.log('Event - Directly added by superadmin:', insertedId);
             
             return res.status(201).json({ 
                 message: 'Event berhasil ditambahkan', 
-                id: result.insertId 
+                id: insertedId 
             });
         }
 
@@ -379,25 +417,39 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
                 }
             }
             
-            const [result] = await db.query(
-                `INSERT INTO organisasi 
-                (user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                [userId, nama, nis, calculatedClass, grha, jabatan_organisasi, finalFotoPath, kategori_organisasi, point]
-            );
-            
-            await applyIptChange(
-                userId,
-                'organisasi',
-                point,
-                buildKeterangan('organisasi', { kategori_organisasi, jabatan_organisasi })
-            );
-            
-            console.log('Organisasi - Directly added by superadmin:', result.insertId);
+            const conn = await db.getConnection();
+            let insertedId = null;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO organisasi 
+                    (user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                    [userId, nama, nis, calculatedClass, grha, jabatan_organisasi, finalFotoPath, kategori_organisasi, point]
+                );
+                insertedId = result.insertId;
+
+                await applyIptChange(
+                    userId,
+                    'organisasi',
+                    point,
+                    buildKeterangan('organisasi', { kategori_organisasi, jabatan_organisasi }),
+                    conn.query
+                );
+
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
+            }
+
+            console.log('Organisasi - Directly added by superadmin:', insertedId);
             
             return res.status(201).json({ 
                 message: 'Organisasi berhasil ditambahkan', 
-                id: result.insertId 
+                id: insertedId 
             });
         }
         
@@ -461,25 +513,39 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
                 }
             }
             
-            const [result] = await db.query(
-                `INSERT INTO kepanitiaan 
-                (user_id, nama, nis, kelas, grha, jabatan_kepanitiaan, foto, kategori_kepanitiaan, point, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                [userId, nama, nis, calculatedClass, grha, jabatan_kepanitiaan, finalFotoPath, kategori_kepanitiaan, point]
-            );
-            
-            await applyIptChange(
-                userId,
-                'kepanitiaan',
-                point,
-                buildKeterangan('kepanitiaan', { kategori_kepanitiaan, jabatan_kepanitiaan })
-            );
-            
-            console.log('Kepanitiaan - Directly added by superadmin:', result.insertId);
+            const conn = await db.getConnection();
+            let insertedId = null;
+            try {
+                await conn.beginTransaction();
+                const [result] = await conn.query(
+                    `INSERT INTO kepanitiaan 
+                    (user_id, nama, nis, kelas, grha, jabatan_kepanitiaan, foto, kategori_kepanitiaan, point, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                    [userId, nama, nis, calculatedClass, grha, jabatan_kepanitiaan, finalFotoPath, kategori_kepanitiaan, point]
+                );
+                insertedId = result.insertId;
+
+                await applyIptChange(
+                    userId,
+                    'kepanitiaan',
+                    point,
+                    buildKeterangan('kepanitiaan', { kategori_kepanitiaan, jabatan_kepanitiaan }),
+                    conn.query
+                );
+
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
+            }
+
+            console.log('Kepanitiaan - Directly added by superadmin:', insertedId);
             
             return res.status(201).json({ 
                 message: 'Kepanitiaan berhasil ditambahkan', 
-                id: result.insertId 
+                id: insertedId 
             });
         }
         
@@ -523,6 +589,7 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
 // SuperAdmin Approve/Reject (single-step approval)
 // Non-superadmin callers must hold the approval scope for that exact type.
 router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) => {
+    let conn = null;
     try {
         const { type, id } = req.params;
         const { status, notes } = req.body;
@@ -600,6 +667,17 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
         }
         const isGroupDecision = targetRows.length > 1;
 
+        // One transaction for the whole decision (all kelompok members):
+        // staging flips, main-table inserts, IPT recompute, and
+        // notifications commit atomically. Pool-only side effects
+        // (activity log, orphan-file cleanup) are deferred until after
+        // the commit and flushed below.
+        conn = await db.getConnection();
+        await conn.beginTransaction();
+        const deferredLogs = [];
+        const deferredOrphans = [];
+        let responseMessage = '';
+
         if (status === 'approved') {
             for (const row of targetRows) {
             const data = row;
@@ -663,61 +741,89 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
                 insertParams = [data.user_id, data.nama || 'Unknown', data.nis || '', data.kelas || '', data.grha || '', data.jabatan_organisasi || '', data.kategori_organisasi || '', finalFotoPath || null, pointChange];
             }
 
-            await db.query(insertQuery, insertParams);
+            await conn.query(insertQuery, insertParams);
 
             // Keep the submission row pointing at the real file location
             // (the file was just moved to the approved folder above).
             if (finalFotoPath) {
-                await db.query(`UPDATE ${table} SET foto = ? WHERE id = ?`, [finalFotoPath, row.id]);
+                await conn.query(`UPDATE ${table} SET foto = ? WHERE id = ?`, [finalFotoPath, row.id]);
             }
 
             await applyIptChange(
                 data.user_id,
                 type,
                 pointChange,
-                buildKeterangan(type, data)
+                buildKeterangan(type, data),
+                conn.query
             );
 
-            await approveSubmission(table, row.id, notes || 'Disetujui oleh SuperAdmin');
+            // Conditional staging flip: 0 rows means a concurrent decision
+            // already processed this row — abort the whole decision.
+            const marked = await approveSubmission(table, row.id, notes || 'Disetujui oleh SuperAdmin', conn.query);
+            if (!marked) {
+                await conn.rollback();
+                return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
+            }
 
-            // Log activity
-            await logActivity(req.user.id, `APPROVE_${type.toUpperCase()}`, `${actorLabel} ${req.user.nama} approved ${type} for ${data.nama} (${data.nis}): ${data[pointField]}`, req.ip);
+            // Deferred until after commit (logActivity writes via the pool).
+            deferredLogs.push([req.user.id, `APPROVE_${type.toUpperCase()}`, `${actorLabel} ${req.user.nama} approved ${type} for ${data.nama} (${data.nis}): ${data[pointField]}`, req.ip]);
 
             // Notify student
-            await db.query(
+            await conn.query(
                 `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'approved', 'Pengajuan Disetujui', ?, ?, ?)`,
                 [data.user_id, `Pengajuan ${type} Anda telah disetujui`, row.id, type]
             );
 
             }
-            res.json({ message: isGroupDecision ? `${type} kelompok berhasil disetujui untuk ${targetRows.length} siswa` : `${type} berhasil disetujui` });
+            responseMessage = isGroupDecision ? `${type} kelompok berhasil disetujui untuk ${targetRows.length} siswa` : `${type} berhasil disetujui`;
         } else {
             for (const row of targetRows) {
             const data = row;
-            await rejectSubmission(table, row.id, notes || 'Ditolak oleh SuperAdmin');
+            const marked = await rejectSubmission(table, row.id, notes || 'Ditolak oleh SuperAdmin', conn.query);
+            if (!marked) {
+                await conn.rollback();
+                return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
+            }
 
             // Delete the evidence file when no other row references it anymore
             // (kelompok siblings share one file — never strand them).
+            // Deferred until after commit: the check must read committed state.
             const fotoVal = data.foto ?? data.foto_path;
             if (fotoVal) {
-                await deletePhotoIfOrphan(db, fotoVal, { exclude: { table, id: row.id }, folderHint: type });
+                deferredOrphans.push({ foto: fotoVal, table, id: row.id, folderHint: type });
             }
 
-            // Log activity
-            await logActivity(req.user.id, `REJECT_${type.toUpperCase()}`, `${actorLabel} ${req.user.nama} rejected ${type} for ${data.nama} (${data.nis}): ${notes || 'No reason'}`, req.ip);
+            // Deferred until after commit (logActivity writes via the pool).
+            deferredLogs.push([req.user.id, `REJECT_${type.toUpperCase()}`, `${actorLabel} ${req.user.nama} rejected ${type} for ${data.nama} (${data.nis}): ${notes || 'No reason'}`, req.ip]);
 
             // Notify student of rejection
-            await db.query(
+            await conn.query(
                 `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'rejected', 'Pengajuan Ditolak', ?, ?, ?)`,
                 [data.user_id, `Pengajuan ${type} Anda ditolak: ${notes || 'Tanpa alasan'}`, row.id, type]
             );
 
             }
-            res.json({ message: isGroupDecision ? `${type} kelompok berhasil ditolak untuk ${targetRows.length} siswa` : `${type} berhasil ditolak` });
+            responseMessage = isGroupDecision ? `${type} kelompok berhasil ditolak untuk ${targetRows.length} siswa` : `${type} berhasil ditolak`;
         }
+
+        await conn.commit();
+
+        for (const o of deferredOrphans) {
+            await deletePhotoIfOrphan(db, o.foto, { exclude: { table: o.table, id: o.id }, folderHint: o.folderHint });
+        }
+        for (const args of deferredLogs) {
+            await logActivity(...args);
+        }
+
+        res.json({ message: responseMessage });
     } catch (error) {
+        if (conn) {
+            try { await conn.rollback(); } catch (_) {}
+        }
         console.error(error);
         res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
+    } finally {
+        if (conn) conn.release();
     }
 });
 
@@ -753,49 +859,89 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
         }
 
         if (status === 'approved') {
-            await db.query(`UPDATE ${table} SET status = 'approved' WHERE id = ? AND status = 'pending'`, [id]);
+            const conn = await db.getConnection();
+            const deferredLogs = [];
+            try {
+                await conn.beginTransaction();
+                const [marked] = await conn.query(`UPDATE ${table} SET status = 'approved' WHERE id = ? AND status = 'pending'`, [id]);
+                if (marked.affectedRows === 0) {
+                    await conn.rollback();
+                    return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
+                }
 
-            if (type === 'pelanggaran') {
-                await applyIptChange(
-                    data.user_id,
-                    'pelanggaran',
-                    // point_dikurangi sudah negatif (hasil calculatePelanggaranPoints),
-                    // jadi langsung dijumlahkan — tanpa tanda minus.
-                    data.point_dikurangi,
-                    `Pelanggaran: ${data.jenis_pelanggaran}`
+                if (type === 'pelanggaran') {
+                    await applyIptChange(
+                        data.user_id,
+                        'pelanggaran',
+                        // point_dikurangi sudah negatif (hasil calculatePelanggaranPoints),
+                        // jadi langsung dijumlahkan — tanpa tanda minus.
+                        data.point_dikurangi,
+                        `Pelanggaran: ${data.jenis_pelanggaran}`,
+                        conn.query
+                    );
+                } else {
+                    await applyPerilakuIptChange(
+                        data.user_id,
+                        data.point,
+                        `Perilaku: ${data.karakter_siswa}`,
+                        id,
+                        conn.query
+                    );
+                }
+
+                // Deferred until after commit (logActivity writes via the pool).
+                deferredLogs.push([approverId, `APPROVE_${type.toUpperCase()}`, `${actorLabel} approved ${type} for ${data.nama} (${data.nis})`, ipAddress]);
+
+                await conn.query(
+                    `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'approved', 'Pengajuan Disetujui', ?, ?, ?)`,
+                    [data.user_id, `Pengajuan ${type} Anda telah disetujui`, id, type]
                 );
-            } else {
-                await applyPerilakuIptChange(
-                    data.user_id,
-                    data.point,
-                    `Perilaku: ${data.karakter_siswa}`,
-                    id
-                );
+
+                await conn.commit();
+            } catch (error) {
+                try { await conn.rollback(); } catch (_) {}
+                throw error;
+            } finally {
+                conn.release();
             }
-
-            // Log activity
-            await logActivity(approverId, `APPROVE_${type.toUpperCase()}`, `${actorLabel} approved ${type} for ${data.nama} (${data.nis})`, ipAddress);
-
-            await db.query(
-                `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'approved', 'Pengajuan Disetujui', ?, ?, ?)`,
-                [data.user_id, `Pengajuan ${type} Anda telah disetujui`, id, type]
-            );
+            for (const args of deferredLogs) {
+                await logActivity(...args);
+            }
 
             return res.json({ message: `${type} berhasil disetujui` });
         }
 
-        await db.query(
-            `UPDATE ${table} SET status = 'rejected', rejection_reason = ? WHERE id = ?`,
-            [notes || 'Ditolak oleh SuperAdmin', id]
-        );
+        const conn = await db.getConnection();
+        const deferredLogs = [];
+        try {
+            await conn.beginTransaction();
+            const [marked] = await conn.query(
+                `UPDATE ${table} SET status = 'rejected', rejection_reason = ? WHERE id = ? AND status = 'pending'`,
+                [notes || 'Ditolak oleh SuperAdmin', id]
+            );
+            if (marked.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
+            }
 
-        // Log activity
-        await logActivity(approverId, `REJECT_${type.toUpperCase()}`, `${actorLabel} rejected ${type} for ${data.nama} (${data.nis}): ${notes || 'No reason'}`, ipAddress);
+            // Deferred until after commit (logActivity writes via the pool).
+            deferredLogs.push([approverId, `REJECT_${type.toUpperCase()}`, `${actorLabel} rejected ${type} for ${data.nama} (${data.nis}): ${notes || 'No reason'}`, ipAddress]);
 
-        await db.query(
-            `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'rejected', 'Pengajuan Ditolak', ?, ?, ?)`,
-            [data.user_id, `Pengajuan ${type} Anda ditolak: ${notes || 'Tanpa alasan'}`, id, type]
-        );
+            await conn.query(
+                `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) VALUES (?, 'rejected', 'Pengajuan Ditolak', ?, ?, ?)`,
+                [data.user_id, `Pengajuan ${type} Anda ditolak: ${notes || 'Tanpa alasan'}`, id, type]
+            );
+
+            await conn.commit();
+        } catch (error) {
+            try { await conn.rollback(); } catch (_) {}
+            throw error;
+        } finally {
+            conn.release();
+        }
+        for (const args of deferredLogs) {
+            await logActivity(...args);
+        }
 
         return res.json({ message: `${type} berhasil ditolak` });
     } catch (error) {
