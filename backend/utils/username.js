@@ -65,13 +65,21 @@ function slugFromName(nama) {
         while (slug.length < USERNAME_MIN) slug = (slug + slug).slice(0, USERNAME_MIN);
         return slug;
     }
-    // Overlong: drop the last word, truncate to 20 as a last resort.
+    // Overlong: drop words from the end until it fits (or one word is
+    // left), then truncate to 20 as a last resort. E.g.
+    // "Artha Narendra Prabhawa Putra" (26) -> "arthanarendra" (13).
     const words = clean.trim().split(/\s+/).filter(Boolean);
-    let slug = (words.length > 1 ? words.slice(0, -1).join('') : (words[0] || ''))
-        .toLowerCase().replace(/[^a-z]/g, '').slice(0, USERNAME_MAX);
-    if (slug.length < USERNAME_MIN) {
-        slug = full.slice(0, USERNAME_MAX) || 'user';
+    let kept = words;
+    while (kept.length > 1) {
+        const candidate = kept.slice(0, -1).join('').toLowerCase().replace(/[^a-z]/g, '');
+        if (candidate.length <= USERNAME_MAX) {
+            let slug = candidate || 'user';
+            while (slug.length < USERNAME_MIN) slug = (slug + slug).slice(0, USERNAME_MIN);
+            return slug;
+        }
+        kept = kept.slice(0, -1);
     }
+    let slug = full.slice(0, USERNAME_MAX) || 'user';
     while (slug.length < USERNAME_MIN) slug = (slug + slug).slice(0, USERNAME_MIN);
     return slug;
 }
