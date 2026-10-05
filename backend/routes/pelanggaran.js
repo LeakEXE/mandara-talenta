@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { calculatePelanggaranPoints } = require('../constants/points');
 const { resolveStudentIdByNis } = require('../utils/ipt');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
+const { movePhotoToApprovedFolder, deletePhotoIfOrphan, evidenceSourcePath } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
 const { recomputeAndStoreIpt } = require('../utils/ipt');
 
@@ -70,7 +70,9 @@ router.post('/', auth, checkPermission('pelanggaran'), upload.single('foto'), as
 
             // Rename the file
             fs.renameSync(oldPath, newPath);
-            foto = newFileName;
+            // Store the canonical full relative path (bare names break
+            // viewers that concatenate the URL directly).
+            foto = `uploads/pelanggaran/${newFileName}`;
         }
 
         const point_dikurangi = await calculatePelanggaranPoints(jenis_pelanggaran);
@@ -112,9 +114,11 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         const pelanggaranData = pelanggaran[0];
         let newFotoPath = pelanggaranData.foto;
 
-        // Move photo to approved folder if it exists
+        // Move photo to approved folder if it exists. evidenceSourcePath
+        // handles every stored shape (full 'uploads/...' or bare filename);
+        // a plain path.join here would double full paths and silently skip.
         if (pelanggaranData.foto) {
-            const movedPath = movePhotoToApprovedFolder(path.join('uploads/pelanggaran', pelanggaranData.foto), 'pelanggaran');
+            const movedPath = movePhotoToApprovedFolder(evidenceSourcePath(pelanggaranData.foto, 'pelanggaran'), 'pelanggaran');
             if (movedPath) {
                 newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
             }
@@ -227,14 +231,14 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
         // Handle new photo upload
         if (req.file) {
-            // Delete old photo if exists
+            // Delete old photo if exists (any stored shape: full or bare)
             if (foto) {
-                const oldPath = resolveUploadPath(path.join('uploads/pelanggaran', foto));
-                if (fs.existsSync(oldPath)) {
+                const oldPath = resolveUploadPath(evidenceSourcePath(foto, 'pelanggaran'));
+                if (oldPath && fs.existsSync(oldPath)) {
                     fs.unlinkSync(oldPath);
                 }
             }
-            
+
             // Rename new file
             const ext = path.extname(req.file.originalname);
             const uniqueId = Date.now().toString(36);
@@ -242,7 +246,9 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             const oldPath = resolveUploadPath(path.join('uploads/pelanggaran', req.file.filename));
             const newPath = resolveUploadPath(path.join('uploads/pelanggaran', newFileName));
             fs.renameSync(oldPath, newPath);
-            foto = newFileName;
+            // Store the canonical full relative path (bare names break
+            // viewers that concatenate the URL directly).
+            foto = `uploads/pelanggaran/${newFileName}`;
         }
 
         // Recalculate points if jenis_pelanggaran changed
