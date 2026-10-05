@@ -56,15 +56,9 @@ const MERGES = [
 // dinamis di createIndividualIptExcelBuffer sesuai jumlah tingkat pelanggaran.
 
 const ROW_HEIGHTS = {
-  9: 14.55, 10: 1.95, 11: 15.6, 12: 15.6, 13: 15.6, 14: 15.6,
-  15: 15.6, 16: 15.6, 17: 15.6, 18: 16.2,
-  19: 15.45, 20: 15.45,
-  21: 16.05, 22: 16.05, 23: 16.05, 24: 16.05, 25: 16.05,
-  26: 16.05, 27: 16.05, 28: 16.2, 29: 16.05,
-  30: 16.05, 31: 16.05, 32: 16.05, 33: 16.05,
-  34: 16.05, 35: 16.05, 36: 16.05, 37: 15.45,
-  39: 15.6, 40: 15.6, 41: 15.6, 42: 15.6, 43: 15.6,
-  44: 15.6, 45: 15.6, 46: 15.6, 47: 15.6,
+  // Hanya baris spacer (10) yang memakai tinggi khusus; semua baris lain
+  // diseragamkan ke 20 (lihat penerapan di createIndividualIptExcelBuffer).
+  10: 1.95,
 };
 
 function setCell(sheet, addr, value, { font, alignment } = {}) {
@@ -232,16 +226,13 @@ export async function createIndividualIptExcelBuffer({
 
   COL_WIDTHS.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
-  // Tinggi baris: baris > 37 (spasi + tanda tangan) bergeser sebesar delta;
-  // baris item Pelanggaran memakai tinggi item, baris TOTAL tinggi TOTAL.
-  const heights = {};
-  Object.entries(ROW_HEIGHTS).forEach(([r, h]) => {
-    const rn = Number(r);
-    heights[rn > 37 ? rn + delta : rn] = h;
-  });
-  for (let r = 34; r <= lastItemRow; r++) heights[r] = 16.05;
-  heights[totalRow] = 15.45;
-  Object.entries(heights).forEach(([r, h]) => { sheet.getRow(Number(r)).height = h; });
+  // Tinggi baris: 20 untuk semua baris kecuali baris spacer (10).
+  // Mencakup area kop (1-8), isi, tabel (yang memanjang mengikuti delta),
+  // dan blok tanda tangan.
+  const lastBodyRow = 47 + delta;
+  for (let r = 1; r <= lastBodyRow; r++) {
+    sheet.getRow(r).height = r === 10 ? ROW_HEIGHTS[10] : 20;
+  }
 
   // Merge baris 9-32 tetap; bagian bawah tabel mengikuti jumlah tingkat.
   const tableTail = [`A33:A${lastItemRow}`, 'B33:G33', 'H33:K33'];
