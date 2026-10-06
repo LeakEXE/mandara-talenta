@@ -96,8 +96,51 @@ async function applyIptAwalUpdate(userId, newIptAwal, adminId) {
 }
 
 // Bulk update IPT awal for multiple users
+// Grade bucket from kelas string, mirroring the frontend rule
+// (first token uppercased: "XI TKJ 1" -> "XI").
+function gradeOfKelas(kelas) {
+    const prefix = String(kelas || '').split(' ')[0].toUpperCase();
+    return prefix === 'X' || prefix === 'XI' || prefix === 'XII' ? prefix : null;
+}
+
 router.post('/bulk-update-ipt-awal', auth, superAdminOnly, async (req, res) => {
     try {
+        // Mode 2 (preferred): apply grade defaults to ALL current students.
+        // The old frontend sent explicit ID lists from a paginated /users
+        // fetch, so anyone past page 1 was silently skipped.
+        if (req.body.grades && typeof req.body.grades === 'object') {
+            const parsedGrades = {};
+            for (const grade of ['X', 'XI', 'XII']) {
+                const v = parseInt(req.body.grades[grade], 10);
+                if (Number.isNaN(v) || v < 0) {
+                    return res.status(400).json({ message: `IPT awal Kelas ${grade} harus angka valid (min 0)` });
+                }
+                parsedGrades[grade] = v;
+            }
+            const [allSiswa] = await db.query(
+                "SELECT id, kelas, ipt_awal FROM users WHERE role = 'siswa'"
+            );
+            const applied = {};
+            for (const grade of ['X', 'XI', 'XII']) {
+                const targets = allSiswa.filter(
+                    (s) => gradeOfKelas(s.kelas) === grade && (s.ipt_awal ?? 0) !== parsedGrades[grade]
+                );
+                let ok = 0;
+                for (const t of targets) {
+                    try {
+                        // eslint-disable-next-line no-await-in-loop
+                        await applyIptAwalUpdate(t.id, parsedGrades[grade], req.user.id);
+                        ok++;
+                    } catch (error) {
+                        console.error(`Bulk IPT awal failed for user ${t.id}:`, error.message);
+                    }
+                }
+                applied[grade] = { updated: ok, of: targets.length };
+            }
+            return res.json({ message: 'IPT awal berhasil diterapkan ke semua siswa', applied });
+        }
+
+        // Mode 1 (legacy): explicit ID list.
         const { userIds, iptAwal } = req.body;
         
         if (!Array.isArray(userIds) || userIds.length === 0) {
@@ -129,6 +172,25 @@ router.post('/bulk-update-ipt-awal', auth, superAdminOnly, async (req, res) => {
         });
     } catch (error) {
         console.error('Bulk update IPT awal error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Siswa headcount per grade (for KonfigurasiIPT labels — paginated /users
+// can't answer "how many" without fetching every page).
+router.get('/counts-by-grade', auth, superAdminOnly, async (req, res) => {
+    try {
+        const [allSiswa] = await db.query(
+            "SELECT kelas FROM users WHERE role = 'siswa'"
+        );
+        const counts = { X: 0, XI: 0, XII: 0 };
+        for (const s of allSiswa) {
+            const grade = gradeOfKelas(s.kelas);
+            if (grade) counts[grade]++;
+        }
+        res.json(counts);
+    } catch (error) {
+        console.error('Counts by grade error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });

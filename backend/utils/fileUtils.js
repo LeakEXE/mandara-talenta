@@ -277,9 +277,40 @@ const evidenceSourcePath = (foto, recordType) => {
     return `uploads/${recordType}/${s}`;
 };
 
+/**
+ * Swap a record's evidence file for a freshly uploaded one (record updates).
+ * - Keeps multer's timestamp-unique filename. The old NIS_Name renames baked
+ *   free-text fields (spaces, slashes) into filenames, breaking viewer URLs.
+ * - Deletes the previous file only when no other row references it
+ *   (kelompok siblings share one evidence file).
+ * - Stores the DB-canonical 'uploads/<type>/f' path; moves to approved/ when
+ *   the record is already approved.
+ * @param {object} db - db wrapper with .query()
+ * @param {object} opts - { oldFoto, uploadedFilename, recordType, approved, exclude:{table,id}|null }
+ * @returns {string|null} DB path to store, or null when the swap failed
+ *   (caller keeps the old value in that case).
+ */
+async function replaceEvidenceFile(db, { oldFoto, uploadedFilename, recordType, approved, exclude = null }) {
+    try {
+        let stored = `uploads/${recordType}/${uploadedFilename}`;
+        if (approved) {
+            const moved = movePhotoToApprovedFolder(stored, recordType);
+            if (moved) stored = path.join('uploads', moved).replace(/\\/g, '/');
+        }
+        if (oldFoto) {
+            await deletePhotoIfOrphan(db, oldFoto, { exclude, folderHint: recordType });
+        }
+        return stored;
+    } catch (error) {
+        console.error('Error replacing evidence file:', error.message);
+        return null;
+    }
+}
+
 module.exports = {
     movePhotoToApprovedFolder,
     deletePhotoFile,
+    replaceEvidenceFile,
     sanitizePath,
     validatePath,
     evidenceSourcePath,

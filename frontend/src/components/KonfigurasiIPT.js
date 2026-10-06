@@ -31,7 +31,7 @@ function KonfigurasiIPT() {
   const [minIptValues, setMinIptValues] = useState({ X: '0', XI: '0', XII: '0' });
   const [minIptSaving, setMinIptSaving] = useState(false);
   const [iptAwalValues, setIptAwalValues] = useState({ X: '80', XI: '80', XII: '80' });
-  const [iptAwalStudents, setIptAwalStudents] = useState({ X: [], XI: [], XII: [] });
+  const [iptAwalCounts, setIptAwalCounts] = useState({ X: 0, XI: 0, XII: 0 });
   const [iptAwalSaving, setIptAwalSaving] = useState(false);
 
   const categories = [
@@ -167,9 +167,9 @@ function KonfigurasiIPT() {
 
   const fetchIptAwalConfig = async () => {
     try {
-      const [defaultsRes, usersRes] = await Promise.all([
+      const [defaultsRes, countsRes] = await Promise.all([
         api.get('/ipt-config/ipt-awal-per-grade'),
-        api.get('/users')
+        api.get('/users/counts-by-grade')
       ]);
       const defaults = defaultsRes.data || {};
       setIptAwalValues({
@@ -177,13 +177,11 @@ function KonfigurasiIPT() {
         XI: String(defaults.XI ?? 80),
         XII: String(defaults.XII ?? 80)
       });
-      const users = Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.users;
-      const byGrade = { X: [], XI: [], XII: [] };
-      (users || []).filter(u => u.role === 'siswa').forEach(s => {
-        const prefix = String(s.kelas || '').split(' ')[0].toUpperCase();
-        if (byGrade[prefix]) byGrade[prefix].push({ id: s.id, ipt_awal: s.ipt_awal });
+      setIptAwalCounts({
+        X: countsRes.data?.X ?? 0,
+        XI: countsRes.data?.XI ?? 0,
+        XII: countsRes.data?.XII ?? 0
       });
-      setIptAwalStudents(byGrade);
     } catch (error) {
       console.error('Error fetching IPT awal config:', error);
     }
@@ -203,23 +201,13 @@ function KonfigurasiIPT() {
       setIptAwalSaving(true);
       // 1. Store grade defaults (used for newly created students)
       await api.put('/ipt-config/ipt-awal-per-grade', parsed);
-      // 2. Apply to current students, but only where the value actually changed
-      const applied = [];
-      for (const grade of ['X', 'XI', 'XII']) {
-        const changed = (iptAwalStudents[grade] || []).filter(s => (s.ipt_awal ?? 0) !== parsed[grade]);
-        if (changed.length > 0) {
-          await api.post('/users/bulk-update-ipt-awal', {
-            userIds: changed.map(s => s.id),
-            iptAwal: parsed[grade]
-          });
-          applied.push(`Kelas ${grade} (${changed.length} siswa)`);
-        }
-      }
-      setMessage(
-        applied.length > 0
-          ? `IPT awal berhasil disimpan dan diterapkan: ${applied.join(', ')}!`
-          : 'IPT awal berhasil disimpan! (tidak ada perubahan pada siswa saat ini)'
+      // 2. Apply to ALL current students server-side (grade buckets resolved
+      //    from every siswa row — never from a paginated frontend list)
+      const { data } = await api.post('/users/bulk-update-ipt-awal', { grades: parsed });
+      const parts = ['X', 'XI', 'XII'].map(
+        (grade) => `Kelas ${grade} (${data?.applied?.[grade]?.updated ?? 0} siswa)`
       );
+      setMessage(`IPT awal berhasil disimpan dan diterapkan: ${parts.join(', ')}!`);
       fetchIptAwalConfig();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal menyimpan IPT awal');
@@ -697,7 +685,7 @@ function KonfigurasiIPT() {
             {['X', 'XI', 'XII'].map(grade => (
               <div key={grade}>
                 <label style={{ display: 'block', marginBottom: 4, fontSize: 12, fontWeight: 600, color: '#6B7080' }}>
-                  Kelas {grade} ({(iptAwalStudents[grade] || []).length} siswa)
+                  Kelas {grade} ({iptAwalCounts[grade] ?? 0} siswa)
                 </label>
                 <input
                   type="number"

@@ -142,9 +142,13 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
             members.push(studentData[0]);
         }
 
-        // Move photo once (shared evidence for all members)
+        // Move photo once (shared evidence for all members) — but ONLY for
+        // direct-add rows, which are approved immediately. Queued submissions
+        // keep the type-folder path; PUT /superadmin/:type/:id moves it on
+        // approval (like the other four types already do).
+        const directAdd = await canDirectAdd(req.user.id, userRole, 'prestasi');
         let sharedFotoPath = fotoPath;
-        if (fotoPath) {
+        if (directAdd && fotoPath) {
             const movedPath = movePhotoToApprovedFolder(fotoPath, 'prestasi');
             if (movedPath) {
                 sharedFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
@@ -153,7 +157,7 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         
         // DIRECT ADD (superadmin, or guru/pegawai holding the 'prestasi'
         // approval scope): approved rows + IPT, skips approval queue
-        if (await canDirectAdd(req.user.id, userRole, 'prestasi')) {
+        if (directAdd) {
             console.log('Prestasi - Direct submission (privileged)');
             const point = await calculatePrestasiPoints(juara, kategori);
 
