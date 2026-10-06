@@ -18,6 +18,7 @@ function InputPrestasi() {
     kategori_lomba: 'individu',
     kelas: '',
     pembina_id: '',
+    pembina_ids: [],
     grha: '',
     juara: 'juara_i',
     kategori: 'sekolah'
@@ -100,6 +101,13 @@ function InputPrestasi() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Display all mentors (multi-pembina), falling back to the primary name.
+  const pembinaLabel = (item) =>
+    (item?.pembina_list && item.pembina_list.length > 0
+      ? item.pembina_list
+      : [item?.pembina]
+    ).filter(Boolean).join(', ') || '-';
+
   const fetchAllPrestasi = async () => {
     try {
       setLoadingIndex(true);
@@ -120,6 +128,12 @@ function InputPrestasi() {
       setEditMembers([]);
     }
     editModal.openEditModal(item);
+    // Seed multi-pembina ids (names -> ids via teacher list; primary fallback).
+    const nameToId = new Map((teachers || []).map(t => [t.nama, String(t.id)]));
+    const ids = item.pembina_list
+      ? item.pembina_list.map(n => nameToId.get(n)).filter(Boolean)
+      : (item.pembina_id ? [String(item.pembina_id)] : []);
+    editModal.setEditFormData(prev => ({ ...prev, pembina_ids: ids }));
   };
 
   const handleDeleteGroup = async (members) => {
@@ -232,6 +246,11 @@ function InputPrestasi() {
           data.append(key, editModal.editFormData[key] ?? '');
         }
       });
+      // Multi-pembina ids as JSON (replaces the comma-joined array above).
+      const editIds = (editModal.editFormData.pembina_ids || []).length > 0
+        ? editModal.editFormData.pembina_ids
+        : (editModal.editFormData.pembina_id ? [editModal.editFormData.pembina_id] : []);
+      data.set('pembina_ids', JSON.stringify(editIds.map(String)));
       if (isGroupEdit) {
         data.append('anggota', JSON.stringify(editMembers.map(m => ({ nama: m.nama, nis: m.nis }))));
       }
@@ -496,6 +515,11 @@ function InputPrestasi() {
       Object.keys(formData).forEach(key => {
         data.append(key, formData[key]);
       });
+      // Multi-pembina ids as JSON (replaces the comma-joined array above).
+      const submitIds = (formData.pembina_ids || []).length > 0
+        ? formData.pembina_ids
+        : (formData.pembina_id ? [formData.pembina_id] : []);
+      data.set('pembina_ids', JSON.stringify(submitIds.map(String)));
       if (formData.kategori_lomba === 'kelompok') {
         data.append('anggota', JSON.stringify(selectedMembers.map(m => ({ nama: m.nama, nis: m.nis }))));
       }
@@ -721,7 +745,7 @@ function InputPrestasi() {
                       <td>{formatDisplayText(item.kategori_lomba || 'individu')}</td>
                       <td>{formatDisplayText(item.juara)}</td>
                       <td>{formatDisplayText(item.kategori)}</td>
-                      <td>{item.pembina || '-'}</td>
+                      <td>{pembinaLabel(item)}</td>
                       <td>{item.point}</td>
                       <td>{getStatusBadge(item)}</td>
                       <td>
@@ -761,7 +785,7 @@ function InputPrestasi() {
                         <td>Kelompok</td>
                         <td>{formatDisplayText(first.juara)}</td>
                         <td>{formatDisplayText(first.kategori)}</td>
-                        <td>{first.pembina || '-'}</td>
+                        <td>{pembinaLabel(first)}</td>
                         <td>{first.point}</td>
                         <td>
                           <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -957,11 +981,12 @@ function InputPrestasi() {
         </div>
 
         <div className="form-group">
-          <label>Pembina</label>
+          <label>Pembina (bisa lebih dari 1)</label>
           <SearchableTeacherSelect
-            value={formData.pembina_id || ''}
+            isMulti
+            value={formData.pembina_ids || []}
             teachers={teachers}
-            onChange={(id) => handleChange({ target: { name: 'pembina_id', value: id } })}
+            onChange={(ids) => setFormData(prev => ({ ...prev, pembina_ids: ids, pembina_id: ids[0] || '' }))}
             placeholder="Cari nama pembina..."
           />
         </div>
@@ -1137,11 +1162,12 @@ function InputPrestasi() {
         </div>
 
         <div className="form-group">
-          <label>Pembina</label>
+          <label>Pembina (bisa lebih dari 1)</label>
           <SearchableTeacherSelect
-            value={editModal.editFormData.pembina_id || ''}
+            isMulti
+            value={editModal.editFormData.pembina_ids || []}
             teachers={teachers}
-            onChange={(id) => editModal.setEditFormData({ ...editModal.editFormData, pembina_id: id })}
+            onChange={(ids) => editModal.setEditFormData({ ...editModal.editFormData, pembina_ids: ids, pembina_id: ids[0] || '' })}
             placeholder="Cari nama pembina..."
           />
         </div>
@@ -1207,7 +1233,7 @@ function InputPrestasi() {
                       {isGroup ? memberNames : `${first.nama} (${first.nis})`} - {formatDisplayText(first.juara)} · {formatDisplayText(first.jenis_lomba || 'akademik')} · {formatDisplayText(first.kategori_lomba || 'individu')}
                     </p>
                     <p style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>
-                      Pembina: {first.pembina || '-'}
+                      Pembina: {pembinaLabel(first)}
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
                       Diajukan: {new Date(first.created_at).toLocaleDateString('id-ID')}

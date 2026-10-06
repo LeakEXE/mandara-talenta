@@ -13,7 +13,7 @@ const {
     calculateKepanitiaanPoints,
     calculatePelanggaranPoints
 } = require('../constants/points');
-const { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
+const { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
 const {
     getApprovalStatusColumn,
     getRowApprovalStatus,
@@ -124,6 +124,12 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         if ((pembina_id || pembina) && !resolvedPembinaId && !resolvedPembinaName) {
             return res.status(400).json({ message: 'Data pembina tidak valid' });
         }
+        // Multi-pembina: frontend sends pembina_ids (JSON array of guru ids);
+        // falls back to the single primary above for old clients.
+        const mentorList = await resolvePembinaIds(req.body.pembina_ids);
+        const mentorIds = mentorList.length > 0
+            ? mentorList.map((m) => m.id)
+            : (resolvedPembinaId ? [resolvedPembinaId] : []);
 
         // Resolve every member (kelas/grha diambil dari database per siswa).
         // One shared grup_lomba id links kelompok members (used by the
@@ -174,6 +180,7 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
                         [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, sharedFotoPath, point]
                     );
+                    await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
                     await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query, { type: 'prestasi', id: result.insertId });
                     insertedIds.push(result.insertId);
                 }
@@ -204,6 +211,7 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [m.id, req.user.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, fotoPath]
             );
+            await setPembinaLinks(db.query, 'prestasi_approval_pembina', 'approval_id', result.insertId, mentorIds);
             insertedIds.push(result.insertId);
         }
 
@@ -777,6 +785,19 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
 
             const [mainRow] = await conn.query(insertQuery, insertParams);
 
+            // Prestasi: carry mentor links from the approval row to the new
+            // record (falls back to the primary pembina for pre-migration rows).
+            if (type === 'prestasi') {
+                const [alinks] = await conn.query(
+                    'SELECT guru_id FROM prestasi_approval_pembina WHERE approval_id = ?',
+                    [row.id]
+                );
+                const copyIds = alinks.length > 0
+                    ? alinks.map((l) => l.guru_id)
+                    : (data.pembina_id ? [data.pembina_id] : []);
+                await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', mainRow.insertId, copyIds);
+            }
+
             // Keep the submission row pointing at the real file location
             // (the file was just moved to the approved folder above).
             if (finalFotoPath) {
@@ -1097,6 +1118,7 @@ router.get('/user-submissions', auth, async (req, res) => {
             WHERE user_id = ? OR submitted_by = ?
             ORDER BY created_at DESC
         `, [userId, userId]);
+        await attachPembinaLists(prestasi, 'prestasi_approval_pembina', 'approval_id');
 
         const [event] = await db.query(`
             SELECT *,

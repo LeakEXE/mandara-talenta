@@ -5,9 +5,10 @@
 // Student totals are reset to their ipt_awal (otherwise phantom points
 // from the wiped records would remain).
 //
-// Wiped tables (18): prestasi, organisasi, kepanitiaan, event, pelanggaran,
-//   perilaku, prestasi/event/organisasi/kepanitiaan/siswa/biodata_update/
-//   student_creation approvals, password_reset_requests, activity_logs,
+// Wiped tables (20): prestasi, prestasi_pembina, organisasi, kepanitiaan,
+//   event, pelanggaran, perilaku, prestasi/event/organisasi/kepanitiaan/
+//   siswa/biodata_update/student_creation approvals,
+//   prestasi_approval_pembina, password_reset_requests, activity_logs,
 //   ipt_history, input_access_logs, notifications.
 // Kept: users, permissions, approval_scopes, wali_kelas_assignment,
 //   ipt_config (+organisasi, perilaku, pelanggaran tables), school_config,
@@ -34,6 +35,8 @@ const WIPE_TABLES = [
     'pelanggaran',
     'perilaku',
     'prestasi_approvals',
+    'prestasi_pembina',
+    'prestasi_approval_pembina',
     'event_approvals',
     'organisasi_approvals',
     'kepanitiaan_approvals',

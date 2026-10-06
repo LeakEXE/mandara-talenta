@@ -2,8 +2,10 @@ import Select from 'react-select';
 
 // Searchable dropdown for guru/pegawai/pembina lists.
 // Teachers prop: [{ id, nama, nip }]
-// value: teacher id (string/number) or ''
-// onChange: receives id as string ('' when cleared), mimics e.target.value
+// Single mode (default): value = teacher id (string/number) or '';
+// onChange receives id as string ('' when cleared), mimics e.target.value.
+// Multi mode (isMulti): value = array of ids; onChange receives string[]
+// of ids ([] when cleared).
 function SearchableTeacherSelect({
   value,
   teachers = [],
@@ -12,6 +14,7 @@ function SearchableTeacherSelect({
   isClearable = true,
   isDisabled = false,
   required = false,
+  isMulti = false,
   inputId,
 }) {
   const options = (teachers || []).map((t) => ({
@@ -19,22 +22,33 @@ function SearchableTeacherSelect({
     label: t.nip ? `${t.nama} (${t.nip})` : t.nama,
   }));
 
-  const selected =
-    value === '' || value === null || value === undefined
+  const selected = isMulti
+    ? options.filter((o) => (value || []).map(String).includes(o.value))
+    : value === '' || value === null || value === undefined
       ? null
       : options.find((o) => o.value === String(value)) ||
         // Fallback: keep showing raw id if teacher list hasn't loaded yet
         null;
+
+  const hiddenValue = isMulti
+    ? (selected || []).map((o) => o.value).join(',')
+    : selected
+      ? selected.value
+      : '';
 
   return (
     <div style={{ position: 'relative' }}>
       <Select
         inputId={inputId}
         value={selected}
-        onChange={(opt) => onChange && onChange(opt ? opt.value : '')}
+        onChange={(opt) =>
+          onChange &&
+          onChange(isMulti ? (opt || []).map((o) => o.value) : opt ? opt.value : '')
+        }
         options={options}
         placeholder={placeholder}
         isSearchable
+        isMulti={isMulti}
         isClearable={isClearable}
         isDisabled={isDisabled}
         noOptionsMessage={() => 'Tidak ditemukan'}
@@ -55,7 +69,7 @@ function SearchableTeacherSelect({
           tabIndex={-1}
           autoComplete="off"
           aria-hidden="true"
-          value={selected ? selected.value : ''}
+          value={hiddenValue}
           onChange={() => {}}
           required
           style={{

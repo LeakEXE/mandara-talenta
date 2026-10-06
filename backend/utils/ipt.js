@@ -3,8 +3,7 @@ const { buildIptCardBreakdown } = require('./iptCardBreakdown');
 
 // Resolve a pembina to { id, nama } from either a guru user id or a name.
 // Returns { id: null, nama: fallback } when unresolvable (caller decides).
-async function resolvePembina(pembinaId, pembinaName) {
-    if (pembinaId) {
+async function resolvePembina(pembinaId, pembinaName) {    if (pembinaId) {
         const [rows] = await db.query("SELECT id, nama FROM users WHERE id = ? AND role IN ('guru', 'pegawai')", [pembinaId]);
         if (rows.length > 0) {
             return { id: rows[0].id, nama: rows[0].nama };
@@ -18,6 +17,73 @@ async function resolvePembina(pembinaId, pembinaName) {
         return { id: null, nama: pembinaName };
     }
     return { id: null, nama: '' };
+}
+
+// Resolve MULTIPLE pembina to [{ id, nama }] from guru user ids.
+// Accepts an array, a JSON string, or a single id. Dedupes, drops
+// non-staff ids. Returns [] when nothing resolves (caller decides).
+async function resolvePembinaIds(input) {
+    let ids = input;
+    if (typeof ids === 'string') {
+        try {
+            ids = JSON.parse(ids);
+        } catch {
+            ids = [ids];
+        }
+    }
+    if (!Array.isArray(ids)) ids = [ids];
+    const uniq = [...new Set(
+        ids.map((v) => parseInt(v, 10)).filter((v) => Number.isInteger(v))
+    )];
+    if (uniq.length === 0) return [];
+    const [rows] = await db.query(
+        "SELECT id, nama FROM users WHERE id IN (?) AND role IN ('guru', 'pegawai')",
+        [uniq]
+    );
+    const byId = new Map(rows.map((r) => [r.id, r.nama]));
+    // Preserve caller order (primary = first).
+    return uniq.filter((id) => byId.has(id)).map((id) => ({ id, nama: byId.get(id) }));
+}
+
+// Replace all mentor links for one prestasi / prestasi_approvals row.
+// linkTable: 'prestasi_pembina' (idCol 'prestasi_id') or
+// 'prestasi_approval_pembina' (idCol 'approval_id').
+async function setPembinaLinks(executor, linkTable, idCol, rowId, guruIds) {
+    const query = executor || db.query;
+    await query(`DELETE FROM ${linkTable} WHERE ${idCol} = ?`, [rowId]);
+    const uniq = [...new Set(
+        (guruIds || []).map((v) => parseInt(v, 10)).filter((v) => Number.isInteger(v))
+    )];
+    for (const gid of uniq) {
+        // Explicit RETURNING: the db wrapper auto-appends RETURNING id to
+        // bare INSERTs, but link tables have no id column.
+        // eslint-disable-next-line no-await-in-loop
+        await query(`INSERT INTO ${linkTable} (${idCol}, guru_id) VALUES (?, ?) RETURNING guru_id`, [rowId, gid]);
+    }
+}
+
+// Attach pembina_list: [names] to prestasi-family rows (by row id).
+// linkTable/idCol as in setPembinaLinks. Rows without links keep
+// pembina_list undefined so callers fall back to the primary `pembina`.
+async function attachPembinaLists(rows, linkTable, idCol, executor) {
+    const query = executor || db.query;
+    if (!rows || rows.length === 0) return rows;
+    const ids = [...new Set(rows.map((r) => r.id))];
+    const [links] = await query(
+        `SELECT l.${idCol} AS row_id, u.nama
+         FROM ${linkTable} l JOIN users u ON u.id = l.guru_id
+         WHERE l.${idCol} IN (?) ORDER BY u.nama ASC`,
+        [ids]
+    );
+    const byRow = new Map();
+    for (const l of links) {
+        if (!byRow.has(l.row_id)) byRow.set(l.row_id, []);
+        byRow.get(l.row_id).push(l.nama);
+    }
+    for (const r of rows) {
+        if (byRow.has(r.id)) r.pembina_list = byRow.get(r.id);
+    }
+    return rows;
 }
 
 // Single source of truth for ipt_history "keterangan" text on every
@@ -188,4 +254,4 @@ async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePeril
     return { ...(stored || {}), supersededCount };
 }
 
-module.exports = { resolveStudentIdByNis, resolvePembina, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans };
+module.exports = { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans };
