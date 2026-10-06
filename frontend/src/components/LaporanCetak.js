@@ -34,7 +34,8 @@ function hitungTotal(s) {
   // Point awal (default 80 if not specified)
   const iptAwal = s.ipt_awal || 80;
   
-  // Prestasi (single category — no more akademik/non-akademik split)
+  // Prestasi: total gabungan dipakai untuk Total IPT (konsisten dengan
+  // backend); rinciannya Akademik / Non-akademik ditampilkan terpisah.
   const totalPrestasi = Number(s.prestasi) || 0;
   
   // Perilaku (7 karakter)
@@ -85,21 +86,23 @@ function styleCell(cell, { fill, bold, align = "center", color } = {}) {
 
 // Column definitions
 const COLUMN_DEFS = [
-  { key: "no", header1: "NO", merge: "v", width: 5 },
-  { key: "nama", header1: "NAMA SISWA", merge: "v", width: 24, align: "left" },
-  { key: "nis", header1: "NIS", merge: "v", width: 11 },
-  { key: "kelas", header1: "KELAS", merge: "v", width: 10 },
-  { key: "ghra", header1: "GHRA", merge: "v", width: 7 },
+  { key: "no", header1: "No", merge: "v", width: 5 },
+  { key: "nama", header1: "Nama Siswa", merge: "v", width: 32, align: "left" },
+  { key: "nis", header1: "Nis", merge: "v", width: 11 },
+  { key: "kelas", header1: "Kelas", merge: "v", width: 10 },
+  { key: "grha", header1: "Grha", merge: "v", width: 9 },
   { key: "pointAwal", header1: "Point Awal", merge: "v", width: 10 }, // Added point awal column
 
-  { key: "prestasi", header1: "Prestasi", header2: "Jumlah", group: "prestasi", width: 10, jumlahFill: "jumlahPrestasi" },
+  { key: "prestasi_akademik", header1: "Prestasi", header2: "Akademik", group: "prestasi", width: 10 },
+  { key: "prestasi_non_akademik", header2: "Non-akademik", group: "prestasi", width: 14 },
+  { key: "jumlahPrestasi", header2: "Jumlah", group: "prestasi", width: 10, jumlahFill: "jumlahPrestasi" },
 
   { key: "tanggung_jawab", header1: "Perkembangan Karakter", header2: "Tanggung Jawab", group: "karakter", width: 13 },
   { key: "disiplin", header2: "Disiplin", group: "karakter", width: 9 },
   { key: "kepedulian", header2: "Kepedulian", group: "karakter", width: 12 },
   { key: "kemandirian", header2: "Kemandirian", group: "karakter", width: 12 }, // Added kemandirian
   { key: "spiritual", header2: "Spiritual", group: "karakter", width: 9 },
-  { key: "kejujuran", header2: "Kejujuran", group: "karakter", width: 9 },
+  { key: "kejujuran", header2: "Kejujuran", group: "karakter", width: 12 },
   { key: "kepercayaan_diri", header2: "Kepercayaan Diri", group: "karakter", width: 15 },
   { key: "jumlahKarakter", header2: "Jumlah", group: "karakter", width: 10, jumlahFill: "jumlahKarakter" },
 
@@ -123,9 +126,11 @@ function buildRowValues(s) {
     nama: s.nama,
     nis: s.nis,
     kelas: s.kelas,
-    ghra: s.ghra || "-",
+    grha: s.grha || "-",
     pointAwal: t.iptAwal, // ipt_awal siswa
-    prestasi: Number(s.prestasi) ?? 0,
+    prestasi_akademik: Number(s.prestasi_akademik) ?? 0,
+    prestasi_non_akademik: Number(s.prestasi_non_akademik) ?? 0,
+    jumlahPrestasi: t.totalPrestasi,
     tanggung_jawab: Number(s.tanggung_jawab) ?? 0,
     disiplin: Number(s.disiplin) ?? 0,
     kepedulian: Number(s.kepedulian) ?? 0,
@@ -144,6 +149,202 @@ function buildRowValues(s) {
     jumlahPelanggaran: t.totalPelanggaran,
     totalIPT: t.iptTotal,
   };
+}
+
+// Leger Excel "Laporan IPT per Kelas" (landscape, fit-to-page).
+// Diekstrak dari generateExcelBlob agar bisa diuji langsung.
+// Kop memakai gambar yang sama dengan raport individual (header.png),
+// dicetak selebar min. 490px / setinggi 128px di baris 1-5.
+export async function createClassIptExcelBuffer({ classStudents = [], schoolName, selectedClass, kopImage = null }) {
+  const minIpt = await fetchMinIptPerGrade();
+  // Prepare student data in the format expected by the Excel generator
+  const formattedStudents = classStudents.map((student, index) => {
+    const points = student.points || {};
+    return {
+      no: index + 1,
+      nama: student.nama || '-',
+      nis: student.nis || '-',
+      kelas: student.kelas || '-',
+      grha: student.grha || '-',
+      // Use snake_case to match backend API directly
+      prestasi: Number(points.prestasi) || 0,
+      prestasi_akademik: Number(points.prestasi_akademik) || 0,
+      prestasi_non_akademik: Number(points.prestasi_non_akademik) || 0,
+      tanggung_jawab: Number(points.tanggung_jawab) || 0,
+      disiplin: Number(points.disiplin) || 0,
+      kepedulian: Number(points.kepedulian) || 0,
+      kemandirian: Number(points.kemandirian) || 0,
+      spiritual: Number(points.spiritual) || 0,
+      kejujuran: Number(points.kejujuran) || 0,
+      kepercayaan_diri: Number(points.kepercayaan_diri) || 0,
+      organisasi: Number(points.organisasi) || 0,
+      kepanitiaan: Number(points.kepanitiaan) || 0,
+      event: Number(points.event) || 0,
+      pelanggaran_ringan: Number(points.pelanggaran_ringan) || 0,
+      pelanggaran_sedang: Number(points.pelanggaran_sedang) || 0,
+      pelanggaran_berat: Number(points.pelanggaran_berat) || 0,
+      pelanggaran_lainnya: Number(points.pelanggaran_lainnya) || 0,
+      ipt_awal: Number(points.point_awal) || Number(student.ipt_awal) || 80,
+    };
+  });
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Laporan IPT", {
+    pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1 },
+  });
+  sheet.properties.defaultRowHeight = 20;
+
+  const totalCols = COLUMN_DEFS.length;
+  const tahunPelajaran = `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`;
+
+  // Kop (baris 1-10 dikosongkan untuk gambar: 2x raport individual,
+  // maks 980x256px agar proporsional dengan tabel landscape).
+  // Berbeda dengan raport individual yang sempit, leger landscape jauh lebih
+  // lebar dari gambar kop — gambar di-center di atas tabel. ExcelJS
+  // mendukung anchor kolom fraksional (lihat anchor.js: nativeCol +
+  // nativeColOff), jadi offset kiri dihitung dalam satuan lebar kolom.
+  if (kopImage) {
+    const imageId = workbook.addImage({ base64: kopImage.base64, extension: kopImage.extension || 'png' });
+    const dims = kopImage.dims || { w: 480, h: 130 };
+    const scale = Math.min(980 / dims.w, 256 / dims.h, 1);
+    const imgW = Math.round(dims.w * scale);
+    const imgH = Math.round(dims.h * scale);
+    const PX_PER_UNIT = 7; // aproksimasi Excel untuk Calibri 11
+    const totalUnits = COLUMN_DEFS.reduce((a, d) => a + d.width, 0);
+    const startUnits = Math.max(0, (totalUnits - imgW / PX_PER_UNIT) / 2);
+    let accUnits = 0;
+    let startCol = 0;
+    while (startCol < totalCols && accUnits + COLUMN_DEFS[startCol].width <= startUnits) {
+      accUnits += COLUMN_DEFS[startCol].width;
+      startCol += 1;
+    }
+    const frac = COLUMN_DEFS[startCol] ? (startUnits - accUnits) / COLUMN_DEFS[startCol].width : 0;
+    sheet.addImage(imageId, {
+      tl: { col: startCol + frac, row: 0 },
+      ext: { width: imgW, height: imgH },
+    });
+  }
+
+  // ---- Judul di bawah kop (kop setinggi ±256px ≈ 10 baris @20pt) ----
+  sheet.mergeCells(11, 1, 11, totalCols);
+  sheet.getCell(11, 1).value = "LAPORAN IPT PER KELAS";
+  sheet.getCell(11, 1).font = { bold: true, size: 13 };
+  sheet.getCell(11, 1).alignment = { horizontal: "center" };
+
+  sheet.mergeCells(12, 1, 12, totalCols);
+  sheet.getCell(12, 1).value = schoolName || "SMK NEGERI BALI MANDARA";
+  sheet.getCell(12, 1).font = { bold: true };
+  sheet.getCell(12, 1).alignment = { horizontal: "center" };
+
+  sheet.mergeCells(13, 1, 13, totalCols);
+  sheet.getCell(13, 1).value = `TAHUN PELAJARAN ${tahunPelajaran}`;
+  sheet.getCell(13, 1).font = { bold: true };
+  sheet.getCell(13, 1).alignment = { horizontal: "center" };
+
+  sheet.mergeCells(15, 1, 15, totalCols);
+  sheet.getCell(15, 1).value = `Kelas: ${selectedClass}`;
+  sheet.getCell(15, 1).font = { bold: true };
+
+  // Baris 16 dikosongkan sebagai jarak
+  const HEAD_ROW_1 = 17; // baris grup
+  const HEAD_ROW_2 = 18; // baris sub-header
+  const DATA_START_ROW = 19;
+
+  // ---- Set lebar kolom ----
+  COLUMN_DEFS.forEach((def, i) => {
+    sheet.getColumn(i + 1).width = def.width;
+  });
+
+  // ---- Set tinggi baris header supaya teks tidak kepotong ----
+  sheet.getRow(HEAD_ROW_1).height = 22;
+  sheet.getRow(HEAD_ROW_2).height = 38;
+
+  // ---- Tulis header baris 1 & 2, sekaligus merge sesuai grup/rowspan ----
+  let colCursor = 1;
+  while (colCursor <= totalCols) {
+    const def = COLUMN_DEFS[colCursor - 1];
+
+    if (def.merge === "v") {
+      // Kolom rowspan 2
+      sheet.mergeCells(HEAD_ROW_1, colCursor, HEAD_ROW_2, colCursor);
+      const cell = sheet.getCell(HEAD_ROW_1, colCursor);
+      cell.value = def.header1;
+      styleCell(cell, { fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : EXCEL_COLORS.headerAbu, bold: true });
+
+      // style cell kedua juga (walau sudah merge) supaya border-nya konsisten
+      styleCell(sheet.getCell(HEAD_ROW_2, colCursor), { fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : EXCEL_COLORS.headerAbu, bold: true });
+
+      colCursor += 1;
+      continue;
+    }
+
+    if (def.group) {
+      // Hitung berapa banyak kolom berturutan dengan group yang sama
+      let span = 1;
+      while (
+        colCursor + span <= totalCols &&
+        COLUMN_DEFS[colCursor + span - 1] &&
+        COLUMN_DEFS[colCursor + span - 1].group === def.group
+      ) {
+        span += 1;
+      }
+
+      if (span > 1) {
+        sheet.mergeCells(HEAD_ROW_1, colCursor, HEAD_ROW_1, colCursor + span - 1);
+      }
+
+      // PENTING: style SEMUA cell dalam rentang merge, bukan cuma cell pertama,
+      // supaya border tidak bolong di tengah setelah merge
+      for (let k = 0; k < span; k++) {
+        const groupCell = sheet.getCell(HEAD_ROW_1, colCursor + k);
+        if (k === 0) groupCell.value = def.header1;
+        styleCell(groupCell, { fill: EXCEL_COLORS[def.group], bold: true });
+      }
+
+      for (let k = 0; k < span; k++) {
+        const subDef = COLUMN_DEFS[colCursor - 1 + k];
+        const subCell = sheet.getCell(HEAD_ROW_2, colCursor + k);
+        subCell.value = subDef.header2;
+        styleCell(subCell, { fill: EXCEL_COLORS[subDef.group], bold: true });
+      }
+
+      colCursor += span;
+      continue;
+    }
+
+    colCursor += 1;
+  }
+
+  // ---- Tulis baris data siswa ----
+  formattedStudents.forEach((s, idx) => {
+    const rowNum = DATA_START_ROW + idx;
+    const values = buildRowValues(s);
+
+    COLUMN_DEFS.forEach((def, colIdx) => {
+      const cell = sheet.getCell(rowNum, colIdx + 1);
+      cell.value = values[def.key];
+
+      const isNegative = typeof values[def.key] === "number" && values[def.key] < 0;
+      const isBelowMin = def.key === "totalIPT" && isBelowMinIpt(values[def.key], minIptFor(minIpt, s.kelas));
+
+      styleCell(cell, {
+        fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : undefined,
+        bold: !!def.jumlahFill,
+        align: def.align || "center",
+        color: isNegative || isBelowMin ? "FFC00000" : undefined,
+      });
+    });
+  });
+
+  // ---- Freeze panes supaya header tetap kelihatan saat scroll ----
+  sheet.views = [{ state: "frozen", ySplit: HEAD_ROW_2 }];
+
+  // ---- Proteksi tulis: dokumen resmi — seluruh sel terkunci,
+  // pengguna hanya boleh menyeleksi (lihat/salin). Password sama
+  // dengan kartu individual (lihat IPT_SHEET_PASSWORD).
+  await sheet.protect(IPT_SHEET_PASSWORD, { selectLockedCells: true, selectUnlockedCells: true });
+
+  return workbook.xlsx.writeBuffer();
 }
 
 function LaporanCetak({ user }) {
@@ -272,168 +473,15 @@ function LaporanCetak({ user }) {
       // For individual report, we'll handle separately if needed
       return null;
     } else if (reportType === 'class') {
-      // For class report, generate Excel with leger format using ExcelJS
+      // Leger kelas (lihat createClassIptExcelBuffer): kop + judul + tabel.
       try {
-        const minIpt = await fetchMinIptPerGrade();
-        // Prepare student data in the format expected by the Excel generator
-        const formattedStudents = classStudents.map((student, index) => {
-          const points = student.points || {};
-          return {
-            no: index + 1,
-            nama: student.nama || '-',
-            nis: student.nis || '-',
-            kelas: student.kelas || '-',
-            ghra: student.grha || '-',
-            // Use snake_case to match backend API directly
-            prestasi: Number(points.prestasi) || 0,
-            tanggung_jawab: Number(points.tanggung_jawab) || 0,
-            disiplin: Number(points.disiplin) || 0,
-            kepedulian: Number(points.kepedulian) || 0,
-            kemandirian: Number(points.kemandirian) || 0,
-            spiritual: Number(points.spiritual) || 0,
-            kejujuran: Number(points.kejujuran) || 0,
-            kepercayaan_diri: Number(points.kepercayaan_diri) || 0,
-            organisasi: Number(points.organisasi) || 0,
-            kepanitiaan: Number(points.kepanitiaan) || 0,
-            event: Number(points.event) || 0,
-            pelanggaran_ringan: Number(points.pelanggaran_ringan) || 0,
-            pelanggaran_sedang: Number(points.pelanggaran_sedang) || 0,
-            pelanggaran_berat: Number(points.pelanggaran_berat) || 0,
-            pelanggaran_lainnya: Number(points.pelanggaran_lainnya) || 0,
-            ipt_awal: Number(points.point_awal) || Number(student.ipt_awal) || 80,
-          };
+        const kopImage = await fetchKopImage(['/header.png']);
+        const buffer = await createClassIptExcelBuffer({
+          classStudents,
+          schoolName: schoolConfig?.school_name || "SMK NEGERI BALI MANDARA",
+          selectedClass,
+          kopImage,
         });
-
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet("Laporan IPT", {
-          pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 },
-        });
-        sheet.properties.defaultRowHeight = 20;
-
-        const totalCols = COLUMN_DEFS.length;
-        const tahunPelajaran = `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`;
-
-        // ---- Judul di atas tabel ----
-        sheet.mergeCells(1, 1, 1, totalCols);
-        sheet.getCell(1, 1).value = "LAPORAN IPT PER KELAS";
-        sheet.getCell(1, 1).font = { bold: true, size: 13 };
-        sheet.getCell(1, 1).alignment = { horizontal: "center" };
-
-        sheet.mergeCells(2, 1, 2, totalCols);
-        sheet.getCell(2, 1).value = schoolConfig?.school_name || "SMK NEGERI BALI MANDARA";
-        sheet.getCell(2, 1).font = { bold: true };
-        sheet.getCell(2, 1).alignment = { horizontal: "center" };
-
-        sheet.mergeCells(3, 1, 3, totalCols);
-        sheet.getCell(3, 1).value = `TAHUN PELAJARAN ${tahunPelajaran}`;
-        sheet.getCell(3, 1).font = { bold: true };
-        sheet.getCell(3, 1).alignment = { horizontal: "center" };
-
-        sheet.mergeCells(5, 1, 5, totalCols);
-        sheet.getCell(5, 1).value = `Kelas: ${selectedClass}`;
-        sheet.getCell(5, 1).font = { bold: true };
-
-        // Baris 6 dikosongkan sebagai jarak
-        const HEAD_ROW_1 = 7; // baris grup
-        const HEAD_ROW_2 = 8; // baris sub-header
-        const DATA_START_ROW = 9;
-
-        // ---- Set lebar kolom ----
-        COLUMN_DEFS.forEach((def, i) => {
-          sheet.getColumn(i + 1).width = def.width;
-        });
-
-        // ---- Set tinggi baris header supaya teks tidak kepotong ----
-        sheet.getRow(HEAD_ROW_1).height = 22;
-        sheet.getRow(HEAD_ROW_2).height = 38;
-
-        // ---- Tulis header baris 1 & 2, sekaligus merge sesuai grup/rowspan ----
-        let colCursor = 1;
-        while (colCursor <= totalCols) {
-          const def = COLUMN_DEFS[colCursor - 1];
-
-          if (def.merge === "v") {
-            // Kolom rowspan 2
-            sheet.mergeCells(HEAD_ROW_1, colCursor, HEAD_ROW_2, colCursor);
-            const cell = sheet.getCell(HEAD_ROW_1, colCursor);
-            cell.value = def.header1;
-            styleCell(cell, { fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : EXCEL_COLORS.headerAbu, bold: true });
-
-            // style cell kedua juga (walau sudah merge) supaya border-nya konsisten
-            styleCell(sheet.getCell(HEAD_ROW_2, colCursor), { fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : EXCEL_COLORS.headerAbu, bold: true });
-
-            colCursor += 1;
-            continue;
-          }
-
-          if (def.group) {
-            // Hitung berapa banyak kolom berturutan dengan group yang sama
-            let span = 1;
-            while (
-              colCursor + span <= totalCols &&
-              COLUMN_DEFS[colCursor + span - 1] &&
-              COLUMN_DEFS[colCursor + span - 1].group === def.group
-            ) {
-              span += 1;
-            }
-
-            if (span > 1) {
-              sheet.mergeCells(HEAD_ROW_1, colCursor, HEAD_ROW_1, colCursor + span - 1);
-            }
-
-            // PENTING: style SEMUA cell dalam rentang merge, bukan cuma cell pertama,
-            // supaya border tidak bolong di tengah setelah merge
-            for (let k = 0; k < span; k++) {
-              const groupCell = sheet.getCell(HEAD_ROW_1, colCursor + k);
-              if (k === 0) groupCell.value = def.header1;
-              styleCell(groupCell, { fill: EXCEL_COLORS[def.group], bold: true });
-            }
-
-            for (let k = 0; k < span; k++) {
-              const subDef = COLUMN_DEFS[colCursor - 1 + k];
-              const subCell = sheet.getCell(HEAD_ROW_2, colCursor + k);
-              subCell.value = subDef.header2;
-              styleCell(subCell, { fill: EXCEL_COLORS[subDef.group], bold: true });
-            }
-
-            colCursor += span;
-            continue;
-          }
-
-          colCursor += 1;
-        }
-
-        // ---- Tulis baris data siswa ----
-        formattedStudents.forEach((s, idx) => {
-          const rowNum = DATA_START_ROW + idx;
-          const values = buildRowValues(s);
-
-          COLUMN_DEFS.forEach((def, colIdx) => {
-            const cell = sheet.getCell(rowNum, colIdx + 1);
-            cell.value = values[def.key];
-
-            const isNegative = typeof values[def.key] === "number" && values[def.key] < 0;
-            const isBelowMin = def.key === "totalIPT" && isBelowMinIpt(values[def.key], minIptFor(minIpt, s.kelas));
-
-            styleCell(cell, {
-              fill: def.jumlahFill ? EXCEL_COLORS[def.jumlahFill] : undefined,
-              bold: !!def.jumlahFill,
-              align: def.align || "center",
-              color: isNegative || isBelowMin ? "FFC00000" : undefined,
-            });
-          });
-        });
-
-        // ---- Freeze panes supaya header tetap kelihatan saat scroll ----
-        sheet.views = [{ state: "frozen", ySplit: HEAD_ROW_2 }];
-
-        // ---- Proteksi tulis: dokumen resmi — seluruh sel terkunci,
-        // pengguna hanya boleh menyeleksi (lihat/salin). Password sama
-        // dengan kartu individual (lihat IPT_SHEET_PASSWORD).
-        await sheet.protect(IPT_SHEET_PASSWORD, { selectLockedCells: true, selectUnlockedCells: true });
-
-        // ---- Trigger download ----
-        const buffer = await workbook.xlsx.writeBuffer();
         return buffer;
       } catch (error) {
         console.error('Error generating Excel:', error);
@@ -630,7 +678,7 @@ function LaporanCetak({ user }) {
         ) : (
           <>
             <p style={{ marginBottom: '14px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Format cetak menampilkan Leger IPT Individual Point Talent dengan format tabel lengkap termasuk NIS, Nama, Kelas, GHRA, breakdown IPT (Prestasi, Perkembangan Karakter, Keaktifan, Pelanggaran), dan Total IPT dalam format landscape yang rapi dan profesional.
+              Format cetak menampilkan Leger IPT Individual Point Talent dengan format tabel lengkap termasuk NIS, Nama, Kelas, Grha, breakdown IPT (Prestasi, Perkembangan Karakter, Keaktifan, Pelanggaran), dan Total IPT dalam format landscape yang rapi dan profesional.
             </p>
 
             <div className="ipt-print-toolbar">

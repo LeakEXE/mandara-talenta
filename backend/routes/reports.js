@@ -192,6 +192,7 @@ router.get('/class-ipt/:kelas', auth, async (req, res) => {
                 nama,
                 nis,
                 kelas,
+                grha,
                 ipt_total,
                 ipt_awal,
                 tahun_pelajaran,
