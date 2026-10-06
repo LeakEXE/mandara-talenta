@@ -1,10 +1,12 @@
 const db = require('../config/database');
+const { attachPembinaLists } = require('./ipt');
 
 async function getStudentRecords(userId) {
     const [prestasi] = await db.query(
         'SELECT * FROM prestasi WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
         [userId, 'approved']
     );
+    await attachPembinaLists(prestasi, 'prestasi_pembina', 'prestasi_id');
 
     const [organisasi] = await db.query(
         'SELECT * FROM organisasi WHERE user_id = ? AND status = ? ORDER BY created_at DESC',

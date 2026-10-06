@@ -49,7 +49,7 @@ function describeRecord(item, category) {
         fields: [
           ['Juara', formatDisplayText(item.juara)],
           ['Kategori', formatDisplayText(item.kategori)],
-          ['Pembina', item.pembina || '-'],
+          ['Pembina', (item.pembina_list && item.pembina_list.length > 0 ? item.pembina_list : [item.pembina]).filter(Boolean).join(', ') || '-'],
           ['Kelas', item.kelas || '-'],
           ['Tanggal', item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-']
         ],

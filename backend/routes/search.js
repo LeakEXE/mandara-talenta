@@ -140,12 +140,22 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
                     COALESCE(SUM(x.point), 0) as total_point
                 FROM users u
                 LEFT JOIN (
+                    -- Linked mentors (multi-pembina): FULL point to EACH
+                    -- linked guru; a kelompok counts once per guru + group.
+                    SELECT l.guru_id AS pembina_ref, MAX(p.point) AS point
+                    FROM prestasi p
+                    JOIN prestasi_pembina l ON l.prestasi_id = p.id
+                    WHERE p.status = 'approved'
+                    GROUP BY l.guru_id, COALESCE(p.grup_lomba, 'solo-' || p.id::TEXT)
+                    UNION ALL
+                    -- Legacy rows without links: previous single-pembina logic.
                     SELECT COALESCE(p.pembina_id, u2.id) AS pembina_ref, p.point
                     FROM prestasi p
                     LEFT JOIN users u2 ON u2.nama = p.pembina AND u2.role IN ('guru', 'pegawai')
                     WHERE p.status = 'approved'
                       AND p.pembina IS NOT NULL AND p.pembina <> ''
                       AND (p.kategori_lomba IS NULL OR p.kategori_lomba <> 'kelompok')
+                      AND NOT EXISTS (SELECT 1 FROM prestasi_pembina l WHERE l.prestasi_id = p.id)
                     UNION ALL
                     SELECT COALESCE(p.pembina_id, u2.id) AS pembina_ref, MAX(p.point) AS point
                     FROM prestasi p
@@ -153,6 +163,7 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
                     WHERE p.status = 'approved'
                       AND p.kategori_lomba = 'kelompok'
                       AND p.pembina IS NOT NULL AND p.pembina <> ''
+                      AND NOT EXISTS (SELECT 1 FROM prestasi_pembina l WHERE l.prestasi_id = p.id)
                     GROUP BY
                         COALESCE(p.pembina_id, u2.id),
                         COALESCE(p.grup_lomba, p.nama_lomba || '|' || COALESCE(p.juara, '') || '|' || COALESCE(p.kategori, ''))
@@ -230,9 +241,10 @@ router.get('/leaderboard/pembina/:pembinaId/records', auth, async (req, res) => 
              LEFT JOIN users t ON t.nama = p.pembina AND t.role IN ('guru', 'pegawai')
              WHERE p.status = 'approved'
                AND p.pembina IS NOT NULL AND p.pembina <> ''
-               AND COALESCE(p.pembina_id, t.id) = ?
+               AND (COALESCE(p.pembina_id, t.id) = ?
+                    OR EXISTS (SELECT 1 FROM prestasi_pembina l WHERE l.prestasi_id = p.id AND l.guru_id = ?))
              ORDER BY p.created_at DESC`,
-            [pembinaId]
+            [pembinaId, pembinaId]
         );
         res.json(rows);
     } catch (error) {

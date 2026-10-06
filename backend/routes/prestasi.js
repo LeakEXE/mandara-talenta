@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits: EVIDENCE_LIMITS });
 const { calculatePrestasiPoints } = require('../constants/points');
-const { buildKeterangan, resolvePembina, resolveStudentIdByNis } = require('../utils/ipt');
+const { buildKeterangan, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, resolveStudentIdByNis } = require('../utils/ipt');
 
 // Get all prestasi (for approvals)
 router.get('/all', auth, async (req, res) => {
@@ -33,6 +33,7 @@ router.get('/all', auth, async (req, res) => {
             JOIN users u ON p.user_id = u.id 
             ORDER BY p.created_at DESC
         `);
+        await attachPembinaLists(prestasi, 'prestasi_pembina', 'prestasi_id');
         res.json(prestasi);
     } catch (error) {
         console.error(error);
@@ -89,11 +90,16 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
         const point = await calculatePrestasiPoints(juara, kategori);
 
         const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(req.body.pembina_id, pembina);
+        const mentorList = await resolvePembinaIds(req.body.pembina_ids);
+        const mentorIds = mentorList.length > 0
+            ? mentorList.map((m) => m.id)
+            : (resolvedPembinaId ? [resolvedPembinaId] : []);
 
         const [result] = await db.query(
             'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [req.user.id, nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point]
         );
+        await setPembinaLinks(db.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
 
         // Log activity
         await db.query(
@@ -265,6 +271,10 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
 
         // Keep pembina link consistent when the name changes
         const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(req.body.pembina_id, pembina);
+        const mentorList = await resolvePembinaIds(req.body.pembina_ids);
+        const mentorIds = mentorList.length > 0
+            ? mentorList.map((m) => m.id)
+            : (resolvedPembinaId ? [resolvedPembinaId] : []);
 
         // Evidence: a new upload keeps its timestamp-unique multer name.
         // Queued rows keep the type-folder path; approved rows land in
@@ -299,6 +309,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                     await conn.rollback();
                     return res.status(404).json({ message: 'Prestasi not found' });
                 }
+                await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', prestasiId, mentorIds);
 
                 // Approved records feed the total: recompute it (same formula as
                 // syncIpt.js) so point edits — and any pre-existing drift — land
@@ -361,16 +372,20 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                         'UPDATE prestasi SET nama_lomba = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, pembina = ?, pembina_id = ?, foto = ?, point = ? WHERE id = ?',
                         [nama_lomba, juara, kategori, jenis_lomba, 'kelompok', resolvedPembinaName, resolvedPembinaId, sharedFoto, point, s.id]
                     );
+                    // eslint-disable-next-line no-await-in-loop
+                    await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', s.id, mentorIds);
                     touchedUserIds.add(s.user_id);
                 }
 
                 // Added members: new rows carrying the shared fields.
                 for (const m of added) {
                     // eslint-disable-next-line no-await-in-loop
-                    await conn.query(
+                    const [addedRow] = await conn.query(
                         'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, 'kelompok', prestasiData.grup_lomba, sharedFoto, point, prestasiData.status]
                     );
+                    // eslint-disable-next-line no-await-in-loop
+                    await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', addedRow.insertId, mentorIds);
                     touchedUserIds.add(m.id);
                 }
 

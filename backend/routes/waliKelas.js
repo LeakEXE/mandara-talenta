@@ -508,17 +508,8 @@ router.post('/', auth, superAdminOnly, async (req, res) => {
             [req.user.id, 'ASSIGN_WALI_KELAS', `Assigned teacher ${guruNama} as wali kelas for ${kelas}`]
         );
 
-        // Notify all pembina (gurus and pegawai)
-        const [pembinas] = await db.query("SELECT id FROM users WHERE role = 'guru' OR role = 'pegawai'");
-        for (const pembina of pembinas) {
-            await db.query(
-                `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) 
-                 VALUES (?, 'wali_kelas_assigned', 'Wali Kelas Baru', ?, ?, 'wali_kelas')`,
-                [pembina.id, `${guruNama} ditunjuk sebagai Wali Kelas ${kelas}`, result.insertId]
-            );
-        }
-
-        // Notify the assigned teacher
+        // Notify the assigned teacher only (school-wide broadcast to all
+        // staff removed: notifications stay relevant to the recipient).
         await db.query(
             `INSERT INTO notifications (user_id, type, title, message, related_id, related_type) 
              VALUES (?, 'wali_kelas_assigned', 'Anda Ditunjuk sebagai Wali Kelas', ?, ?, 'wali_kelas')`,

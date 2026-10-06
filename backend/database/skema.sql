@@ -193,6 +193,17 @@ CREATE TABLE prestasi (
     FOREIGN KEY (pembina_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- Prestasi mentor links (multi-pembina). pembina/pembina_id stay as the
+-- PRIMARY pembina; these rows hold every mentor (primary included).
+CREATE TABLE IF NOT EXISTS prestasi_pembina (
+    prestasi_id INTEGER NOT NULL,
+    guru_id INTEGER NOT NULL,
+    PRIMARY KEY (prestasi_id, guru_id),
+    FOREIGN KEY (prestasi_id) REFERENCES prestasi(id) ON DELETE CASCADE,
+    FOREIGN KEY (guru_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_prestasi_pembina_guru ON prestasi_pembina(guru_id);
+
 -- Organisasi Table
 DROP TABLE IF EXISTS organisasi CASCADE;
 CREATE TABLE organisasi (
@@ -375,6 +386,17 @@ CREATE TABLE prestasi_approvals (
 );
 CREATE TRIGGER trg_prestasi_approvals_updated BEFORE UPDATE ON prestasi_approvals
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Prestasi mentor links (multi-pembina). pembina/pembina_id stay as the
+-- PRIMARY pembina; these rows hold every mentor (primary included).
+CREATE TABLE IF NOT EXISTS prestasi_approval_pembina (
+    approval_id INTEGER NOT NULL,
+    guru_id INTEGER NOT NULL,
+    PRIMARY KEY (approval_id, guru_id),
+    FOREIGN KEY (approval_id) REFERENCES prestasi_approvals(id) ON DELETE CASCADE,
+    FOREIGN KEY (guru_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_prestasi_approval_pembina_guru ON prestasi_approval_pembina(guru_id);
 
 -- Event Approvals Table
 DROP TABLE IF EXISTS event_approvals CASCADE;
