@@ -88,6 +88,7 @@ function Dashboard() {
   const [showLabels, setShowLabels] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [schoolConfig, setSchoolConfig] = useState(null);
+  const [topPembina, setTopPembina] = useState([]);
   const isNarrowChart = useIsNarrowChart(768);
   const grhaTotal = useMemo(
     () => (stats?.by_grha || []).reduce((sum, g) => sum + (g.count || 0), 0),
@@ -106,6 +107,7 @@ function Dashboard() {
     fetchStats(false);
     fetchSchoolConfig();
     fetchFreshUser();
+    fetchTopPembina();
 
     const interval = setInterval(() => fetchStats(false), 30000);
     const schoolConfigInterval = setInterval(fetchSchoolConfig, 30000);
@@ -172,6 +174,18 @@ function Dashboard() {
 
   const handleRefresh = () => {
     if (!refreshing) fetchStats(true);
+    fetchTopPembina();
+  };
+
+  // Top-5 pembina comes from the dedicated leaderboard endpoint (fetched on
+  // mount/refresh only — it is a heavy aggregation, not 30s-poll material).
+  const fetchTopPembina = async () => {
+    try {
+      const res = await api.get('/search/leaderboard/category/pembina');
+      setTopPembina((res.data || []).slice(0, 5));
+    } catch {
+      setTopPembina([]);
+    }
   };
 
   const activityData = useMemo(() => ([
@@ -433,6 +447,73 @@ function Dashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* TOP 5 PEMBINA */}
+          <div className="dash-card">
+            <div className="card-head">
+              <h3>
+                <span className="card-head-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15 8.5 22 9.5 17 14.5 18.5 21.5 12 18 5.5 21.5 7 14.5 2 9.5 9 8.5 12 2" /></svg>
+                </span>
+                Top 5 Pembina
+              </h3>
+              <p>Pembina dengan total poin bimbingan tertinggi (prestasi disetujui)</p>
+            </div>
+
+            {topPembina.length > 0 && (
+              <div className="podium">
+                {[
+                  { t: topPembina[1], cls: 'second', rank: 2 },
+                  { t: topPembina[0], cls: 'first', rank: 1 },
+                  { t: topPembina[2], cls: 'third', rank: 3 }
+                ].filter((x) => x.t).map(({ t, cls, rank }) => (
+                  <div key={t.id || rank} className={`podium-slot ${cls}`}>
+                    <div className="podium-medal"><MedalIcon rank={rank} /></div>
+                    <div className="podium-avatar"><StudentAvatar foto={t.foto} nama={t.nama} /></div>
+                    <div className="podium-name" title={t.nama}>{t.nama}</div>
+                    <div className="podium-meta">{t.jabatan || 'Guru'}</div>
+                    <div className={`podium-total ${valueCls}`}><Award size={14} /> {t.total_point} poin</div>
+                    <div className="podium-step">{rank}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {topPembina.length > 0 ? (
+            <div className="table-wrap">
+              <table className="dash-table">
+                <thead>
+                  <tr>
+                    <th>Peringkat</th>
+                    <th>Nama</th>
+                    <th>NIP</th>
+                    <th>Total Poin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topPembina.map((t, index) => (
+                    <tr key={t.id || index} style={{ animationDelay: `${index * 0.06}s` }}>
+                      <td><div className={`pos-badge ${index === 0 ? 'p1' : index === 1 ? 'p2' : index === 2 ? 'p3' : ''}`}>{index + 1}</div></td>
+                      <td>
+                        <div className="student-cell">
+                          <div className="table-avatar"><StudentAvatar foto={t.foto} nama={t.nama} /></div>
+                          <div>
+                            <div style={{ fontWeight: 600 }}>{t.nama}</div>
+                            <div className="student-nis">{t.jabatan || 'Guru'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{t.nip || '-'}</td>
+                      <td className={`ipt-cell ${valueCls}`}>{t.total_point} poin</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            ) : (
+              <div className="chart-empty">Belum ada data pembina.</div>
+            )}
           </div>
 
           {/* CHARTS */}
