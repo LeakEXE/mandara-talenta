@@ -23,18 +23,61 @@ const {
 } = require('../utils/approvalSchema');
 const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { ensureUploadSubdir, UPLOAD_DIR, resolveUploadPath } = require('../utils/paths');
+const { getCurrentAcademicYear } = require('../utils/academicYear');
 const fs = require('fs');
 // Local file storage only - Google Drive removed
 
 // Notify superadmins AND staff holding the approval scope for this type.
-async function getApprovalRecipients(jenis) {
-    const [recipients] = await db.query(
-        `SELECT DISTINCT u.id FROM users u
-         WHERE u.role = 'superadmin'
-            OR EXISTS (SELECT 1 FROM approval_scopes s WHERE s.user_id = u.id AND s.jenis = ?)`,
-        [jenis]
-    );
-    return recipients;
+async function getApprovalRecipients(jenis, context = {}) {
+    const { kelas = [], pembinaIds = [], pembinaNames = [] } = context;
+    const [admins] = await db.query(`SELECT id FROM users WHERE role = 'superadmin'`);
+    const ids = new Set(admins.map((a) => a.id));
+
+    // Staff related to THIS submission only: wali kelas of the students'
+    // classes (current academic year) plus the listed pembina. School-wide
+    // fan-out to every scope holder spams unrelated users on a shared NAT
+    // where everyone already shares one IP budget.
+    const related = new Set(pembinaIds.filter(Number.isInteger));
+    if (pembinaNames.length > 0) {
+        const [byName] = await db.query(
+            `SELECT id FROM users WHERE nama IN (?) AND role IN ('guru', 'pegawai')`,
+            [pembinaNames]
+        );
+        for (const r of byName) related.add(r.id);
+    }
+    const classList = [...new Set((Array.isArray(kelas) ? kelas : [kelas]).filter(Boolean))];
+    if (classList.length > 0) {
+        try {
+            const [wali] = await db.query(
+                `SELECT guru_id FROM wali_kelas_assignment WHERE kelas IN (?) AND tahun_ajaran = ?`,
+                [classList, getCurrentAcademicYear()]
+            );
+            for (const w of wali) {
+                if (Number.isInteger(w.guru_id)) related.add(w.guru_id);
+            }
+        } catch {
+            // assignment lookup failed: fall through to the safety net below
+        }
+    }
+
+    const holdersOf = async (idSet) => {
+        if (idSet.size === 0) return [];
+        const [rows] = await db.query(
+            `SELECT user_id AS id FROM approval_scopes WHERE jenis = ? AND user_id IN (${[...idSet].map(() => '?').join(',')})`,
+            [jenis, ...idSet]
+        );
+        return rows;
+    };
+
+    let scoped = await holdersOf(related);
+    if (scoped.length === 0) {
+        // Safety net: nobody related holds the scope — notify all holders
+        // of the jenis so the submission never sits unhandled.
+        const [all] = await db.query(`SELECT user_id AS id FROM approval_scopes WHERE jenis = ?`, [jenis]);
+        scoped = all;
+    }
+    for (const s of scoped) ids.add(s.id);
+    return [...ids].map((id) => ({ id }));
 }
 
 // Direct-add privilege for record submissions (all types except perilaku,
@@ -219,8 +262,11 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         const memberSummary = members.map(m => `${m.nama} (${m.nis})`).join(', ');
         await logActivity(req.user.id, 'SUBMIT_PRESTASI', `User ${req.user.nama} (${req.user.role}) submitted prestasi for ${memberSummary}: ${nama_lomba}`, req.ip);
 
-        // Notify superadmins AND staff holding the 'prestasi' approval scope
-        const recipients = await getApprovalRecipients('prestasi');
+        // Notify superadmins + related scope-holders (wali kelas / pembina)
+        const recipients = await getApprovalRecipients('prestasi', {
+            kelas: members.map((m) => m.kelas),
+            pembinaIds: mentorIds
+        });
         console.log('Prestasi - Recipients found:', recipients.length);
         for (const recipient of recipients) {
             await db.query(
@@ -401,8 +447,11 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_EVENT', `User ${req.user.nama} (${req.user.role}) submitted event for ${nama} (${nis}): ${nama_event}`, req.ip);
 
-        // Notify superadmins AND staff holding the 'event' approval scope
-        const recipients = await getApprovalRecipients('event');
+        // Notify superadmins + related scope-holders (wali kelas / pembina)
+        const recipients = await getApprovalRecipients('event', {
+            kelas: calculatedClass,
+            pembinaNames: pembina ? [pembina] : []
+        });
         console.log('Event - Recipients found:', recipients.length);
         for (const recipient of recipients) {
             await db.query(
@@ -501,8 +550,11 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_ORGANISASI', `User ${req.user.nama} (${req.user.role}) submitted organisasi for ${nama} (${nis}): ${kategori_organisasi}`, req.ip);
 
-        // Notify superadmins AND staff holding the 'organisasi' approval scope
-        const recipients = await getApprovalRecipients('organisasi');
+        // Notify superadmins + related scope-holders (wali kelas / pembina)
+        const recipients = await getApprovalRecipients('organisasi', {
+            kelas: calculatedClass,
+            pembinaNames: pembina ? [pembina] : []
+        });
         console.log('Organisasi - Recipients found:', recipients.length);
         for (const recipient of recipients) {
             await db.query(
@@ -601,8 +653,11 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_KEPANITIAAN', `User ${req.user.nama} (${req.user.role}) submitted kepanitiaan for ${nama} (${nis}): ${kategori_kepanitiaan}`, req.ip);
 
-        // Notify superadmins AND staff holding the 'kepanitiaan' approval scope
-        const recipients = await getApprovalRecipients('kepanitiaan');
+        // Notify superadmins + related scope-holders (wali kelas / pembina)
+        const recipients = await getApprovalRecipients('kepanitiaan', {
+            kelas: calculatedClass,
+            pembinaNames: pembina ? [pembina] : []
+        });
         console.log('Kepanitiaan - Recipients found:', recipients.length);
         for (const recipient of recipients) {
             await db.query(
@@ -1208,6 +1263,9 @@ router.get('/notifications', auth, async (req, res) => {
                     WHEN n.related_type = 'biodata' THEN (SELECT u.nama FROM biodata_update_approvals b JOIN users u ON b.user_id = u.id WHERE b.id = n.related_id)
                     WHEN n.related_type = 'pelanggaran' THEN (SELECT keterangan FROM pelanggaran WHERE id = n.related_id)
                     WHEN n.related_type = 'perilaku' THEN (SELECT karakter_siswa FROM perilaku WHERE id = n.related_id)
+                    WHEN n.related_type = 'kepanitiaan' THEN (SELECT kategori_kepanitiaan FROM kepanitiaan_approvals WHERE id = n.related_id)
+                    WHEN n.related_type = 'password_reset' THEN (SELECT u.nama FROM password_reset_requests r JOIN users u ON u.id = r.user_id WHERE r.id = n.related_id)
+                    WHEN n.related_type = 'wali_kelas' THEN (SELECT kelas FROM wali_kelas_assignment WHERE id = n.related_id)
                 END as detail_name
              FROM notifications n 
              WHERE n.user_id = ? 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
-import { CircleCheck, CircleX, Clock, UserCheck, FileText, Bell, Inbox } from 'lucide-react';
+import { CircleCheck, CircleX, Clock, Bell, Inbox } from 'lucide-react';
 
 function Notifications() {
   const [notifications, setNotifications] = useState([]);
@@ -58,9 +58,7 @@ function Notifications() {
   const NOTIF_ICONS = {
     approved: CircleCheck,
     rejected: CircleX,
-    approval_needed: Clock,
-    pembina_approved: UserCheck,
-    new_submission: FileText
+    approval_needed: Clock
   };
 
   const getNotificationIcon = (type) => NOTIF_ICONS[type] || Bell;
@@ -70,8 +68,6 @@ function Notifications() {
       case 'approved': return 'var(--green-bg)';
       case 'rejected': return 'var(--danger-bg)';
       case 'approval_needed': return 'var(--amber-bg)';
-      case 'pembina_approved': return 'var(--blue-light)';
-      case 'new_submission': return 'var(--bg-tertiary)';
       default: return 'var(--bg-tertiary)';
     }
   };
@@ -81,8 +77,6 @@ function Notifications() {
       case 'approved': return 'Disetujui';
       case 'rejected': return 'Ditolak';
       case 'approval_needed': return 'Perlu Persetujuan';
-      case 'pembina_approved': return 'Pembina Menyetujui';
-      case 'new_submission': return 'Pengajuan Baru';
       default: return 'Notifikasi';
     }
   };

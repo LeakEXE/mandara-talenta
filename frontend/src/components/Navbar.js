@@ -159,7 +159,7 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
         <div className="sidebar-header">
           <div className="sidebar-header-content">
             <h2>Mandara Talenta</h2>
-            <p>Bali Mandara</p>
+            <p>SMKN Bali Mandara</p>
           </div>
         </div>
         <ul className="sidebar-nav">
