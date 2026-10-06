@@ -1,20 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
-import { GraduationCap, TriangleAlert, ClipboardList, User } from 'lucide-react';
-
-function getIptDetailRows(points = {}) {
-  return [
-    ['Prestasi', Number(points.prestasi) || 0],
-    ['Perilaku', ['tanggung_jawab', 'disiplin', 'kepedulian', 'kemandirian', 'spiritual', 'kejujuran', 'kepercayaan_diri']
-      .reduce((sum, key) => sum + (Number(points[key]) || 0), 0)],
-    ['Organisasi', Number(points.organisasi) || 0],
-    ['Kepanitiaan', Number(points.kepanitiaan) || 0],
-    ['Event', Number(points.event) || 0],
-    ['Pelanggaran', -(['pelanggaran_ringan', 'pelanggaran_sedang', 'pelanggaran_berat']
-      .reduce((sum, key) => sum + (Number(points[key]) || 0), 0))]
-  ];
-}
+import { GraduationCap, TriangleAlert, ClipboardList } from 'lucide-react';
+import StudentDetail from './StudentDetail';
 
 function TeacherWaliKelas() {
   const minIpt = useMinIptPerGrade();
@@ -23,8 +11,6 @@ function TeacherWaliKelas() {
   const [error, setError] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showStudentDetail, setShowStudentDetail] = useState(false);
-  const [loadingIptDetail, setLoadingIptDetail] = useState(false);
-  const [iptDetail, setIptDetail] = useState(null);
 
   useEffect(() => {
     fetchMyClass();
@@ -42,20 +28,10 @@ function TeacherWaliKelas() {
     }
   };
 
-  const handleViewStudentDetail = async (student) => {
+  const handleViewStudentDetail = (student) => {
+    // StudentDetail fetches its own records/history/IPT card.
     setSelectedStudent(student);
     setShowStudentDetail(true);
-    setLoadingIptDetail(true);
-    setIptDetail(null);
-    
-    try {
-      const response = await api.get(`/reports/ipt-card/${student.id}`);
-      setIptDetail(response.data);
-    } catch (error) {
-      console.error('Error fetching IPT detail:', error);
-    } finally {
-      setLoadingIptDetail(false);
-    }
   };
 
   const getIptColor = (ipt) => {
@@ -335,210 +311,12 @@ function TeacherWaliKelas() {
         </div>
       </div>
 
-      {/* Student Detail Modal */}
+      {/* Student Detail Modal (shared component) */}
       {showStudentDetail && selectedStudent && (
-        <div className="app-modal-overlay" style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1500,
-          padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '15px',
-            padding: '30px',
-            maxWidth: '600px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><User size={18} /> Detail Siswa</h3>
-              <button
-                onClick={() => setShowStudentDetail(false)}
-                style={{
-                  backgroundColor: 'var(--danger-color)',
-                  color: 'white',
-                  border: 'none',
-                  padding: '8px 16px',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Tutup
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginBottom: '15px', color: 'var(--blue)' }}>Informasi Pribadi</h4>
-              <table style={{ width: '100%' }}>
-                <tbody>
-                  <tr>
-                    <td style={{ padding: '8px', fontWeight: 'bold', width: '40%' }}>Nama</td>
-                    <td style={{ padding: '8px' }}>{selectedStudent.nama}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>NIS</td>
-                    <td style={{ padding: '8px' }}>{selectedStudent.nis}</td>
-                  </tr>
-                  <tr>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Grha</td>
-                    <td style={{ padding: '8px' }}>{selectedStudent.grha || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>Alamat</td>
-                    <td style={{ padding: '8px' }}>{selectedStudent.alamat || '-'}</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>No. HP</td>
-                    <td style={{ padding: '8px' }}>{selectedStudent.no_hp || '-'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginBottom: '15px', color: 'var(--success-color)' }}>Statistik Aktivitas</h4>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '15px'
-              }}>
-                <div style={{ 
-                  backgroundColor: 'var(--green-bg)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--success-color)' }}>
-                    {selectedStudent.stats.prestasi}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Prestasi</div>
-                </div>
-                <div style={{ 
-                  backgroundColor: 'var(--purple-bg)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--purple)' }}>
-                    {selectedStudent.stats.event}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Event</div>
-                </div>
-                <div style={{ 
-                  backgroundColor: 'var(--amber-bg)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--warning-color)' }}>
-                    {selectedStudent.stats.organisasi}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Organisasi</div>
-                </div>
-                <div style={{ 
-                  backgroundColor: selectedStudent.stats.pelanggaran > 0 ? 'var(--danger-bg)' : 'var(--green-bg)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: selectedStudent.stats.pelanggaran > 0 ? 'var(--danger-color)' : 'var(--success-color)' }}>
-                    {selectedStudent.stats.pelanggaran}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Pelanggaran</div>
-                </div>
-                <div style={{ 
-                  backgroundColor: 'var(--blue-light)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--blue)' }}>
-                    {selectedStudent.stats.perilaku}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Perilaku Positif</div>
-                </div>
-                <div style={{ 
-                  backgroundColor: 'var(--amber-bg)', 
-                  padding: '15px', 
-                  borderRadius: '8px',
-                  textAlign: 'center'
-                }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--warning-color)' }}>
-                    {selectedStudent.stats.kepanitiaan}
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--slate)' }}>Kepanitiaan</div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginBottom: '15px', color: 'var(--purple)' }}>Detail IPT</h4>
-              {loadingIptDetail ? (
-                <div style={{ textAlign: 'center', padding: '20px' }}>
-                  <div className="spinner" style={{ 
-                    border: '4px solid var(--bg-tertiary)',
-                    borderTop: '4px solid var(--purple)',
-                    borderRadius: '50%',
-                    width: '30px',
-                    height: '30px',
-                    animation: 'spin 1s linear infinite',
-                    margin: '0 auto 10px'
-                  }}></div>
-                  <p style={{ color: 'var(--slate)' }}>Memuat detail IPT...</p>
-                </div>
-              ) : iptDetail ? (
-                <div style={{ 
-                  backgroundColor: 'var(--bg-tertiary)', 
-                  padding: '15px', 
-                  borderRadius: '8px'
-                }}>
-                  <div style={{ display: 'grid', gap: '8px', marginBottom: '15px' }}>
-                    {getIptDetailRows(iptDetail.points || {}).map(([label, value]) => (
-                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', padding: '8px', backgroundColor: 'white', borderRadius: '4px' }}>
-                        <span style={{ fontWeight: '500' }}>{label}</span>
-                        <strong style={{ color: value < 0 ? 'var(--danger-color)' : 'var(--success-color)' }}>
-                          {value > 0 ? '+' : ''}{value}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ 
-                    padding: '15px', 
-                    backgroundColor: isBelowMinIpt(selectedStudent.ipt_total || 80, minIptFor(minIpt, classData?.kelas)) ? 'var(--danger-color)' : getIptColor(selectedStudent.ipt_total || 80), 
-                    borderRadius: '8px',
-                    textAlign: 'center',
-                    color: 'white'
-                  }}>
-                    <div style={{ fontSize: '32px', fontWeight: 'bold', marginBottom: '5px' }}>
-                      {selectedStudent.ipt_total || 80}
-                    </div>
-                    <div style={{ fontSize: '14px' }}>Total IPT</div>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ 
-                  padding: '20px', 
-                  backgroundColor: 'var(--amber-bg)', 
-                  borderRadius: '8px',
-                  textAlign: 'center',
-                  color: 'var(--amber-text)'
-                }}>
-                  Gagal memuat detail IPT
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <StudentDetail
+          student={selectedStudent}
+          onClose={() => { setShowStudentDetail(false); setSelectedStudent(null); }}
+        />
       )}
     </div>
   );
