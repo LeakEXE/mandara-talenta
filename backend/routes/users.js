@@ -790,13 +790,14 @@ router.post('/create-teacher', auth, superAdminOnly, async (req, res) => {
             return res.status(400).json({ message: `Jabatan tidak valid. Gunakan: ${VALID_TEACHER_JABATAN.join(', ')}` });
         }
 
-        // Check for duplicate
+        // Check for duplicate ("-" is the placeholder for staff without a
+        // NIP and may be shared by any number of accounts)
         const [existing] = await db.query(
             'SELECT id FROM users WHERE nip = ?',
             [nip]
         );
 
-        if (existing.length > 0) {
+        if (existing.length > 0 && nip !== '-') {
             return res.status(400).json({ message: 'NIP already exists' });
         }
 
@@ -886,7 +887,8 @@ router.put('/:id', auth, async (req, res) => {
         }
         if (nip !== undefined) {
             const [targetNip] = await db.query('SELECT nip FROM users WHERE id = ?', [userId]);
-            if (nip !== targetNip[0]?.nip) {
+            // "-" marks staff without a NIP and is exempt from uniqueness
+            if (nip !== targetNip[0]?.nip && nip !== '-') {
                 const [dup] = await db.query('SELECT id FROM users WHERE nip = ? AND id <> ?', [nip, userId]);
                 if (dup.length > 0) {
                     return res.status(400).json({ message: 'NIP sudah dipakai akun lain' });

@@ -28,7 +28,7 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     nama VARCHAR(100) NOT NULL,
     nis VARCHAR(20) UNIQUE,
-    nip VARCHAR(30) UNIQUE,
+    nip VARCHAR(30),
     username VARCHAR(20) UNIQUE,
     password VARCHAR(255) NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('superadmin', 'guru', 'pegawai', 'siswa')),
@@ -51,6 +51,8 @@ CREATE TABLE users (
 CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users (LOWER(username));
+-- NIP is unique EXCEPT for the '-' placeholder used by staff without a NIP.
+CREATE UNIQUE INDEX IF NOT EXISTS users_nip_key ON users (nip) WHERE nip <> '-';
 
 -- Permissions Table
 DROP TABLE IF EXISTS permissions CASCADE;
