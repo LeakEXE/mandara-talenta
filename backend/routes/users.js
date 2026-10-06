@@ -632,8 +632,10 @@ router.get('/lookup', auth, teacherOrSuperAdmin, async (req, res) => {
     }
 });
 
-// Get student approved records (Guru/Superadmin)
-router.get('/:id/records', auth, teacherOrSuperAdmin, async (req, res) => {
+// Get student approved records (any authenticated user — the leaderboard
+// already exposes every siswa's name/NIS/kelas/totals, so approved records
+// are no additional exposure; used by the leaderboard detail modals)
+router.get('/:id/records', auth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         const [user] = await db.query('SELECT id, role FROM users WHERE id = ?', [userId]);

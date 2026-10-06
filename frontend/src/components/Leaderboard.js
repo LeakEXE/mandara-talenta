@@ -4,6 +4,7 @@ import API_BASE_URL from '../config';
 import { Trophy, Users, Award, Clock, ClipboardList, RefreshCw, Eye } from 'lucide-react';
 import { CATEGORY_ICONS, MedalIcon } from './icons';
 import CategoryRecordModal from './CategoryRecordModal';
+import PembinaRecordModal from './PembinaRecordModal';
 
 const SLATE = "var(--slate)";
 
@@ -25,17 +26,9 @@ function Leaderboard() {
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [recordTarget, setRecordTarget] = useState(null);
-  // /users/:id/records requires guru/superadmin — siswa sees ranking only.
-  // Pembina rows are teachers (mentored-student totals), not own records.
-  const canViewRecords = (() => {
-    try {
-      const role = JSON.parse(localStorage.getItem('user') || '{}')?.role;
-      return role === 'superadmin' || role === 'guru' || role === 'pegawai';
-    } catch {
-      return false;
-    }
-  })();
-  const showRecordButton = canViewRecords && activeCategory !== 'pembina';
+  // Record detail is visible to every authenticated role (the backing
+  // endpoints serve approved records only, same exposure as the ranking).
+  const showRecordButton = true;
 
   useEffect(() => {
     fetchCategory('prestasi');
@@ -817,10 +810,17 @@ function Leaderboard() {
           </div>
         </>
       )}
-      {recordTarget && (
+      {recordTarget && activeCategory !== 'pembina' && (
         <CategoryRecordModal
           student={recordTarget}
           category={activeCategory}
+          totalPoint={recordTarget.total_point}
+          onClose={() => setRecordTarget(null)}
+        />
+      )}
+      {recordTarget && activeCategory === 'pembina' && (
+        <PembinaRecordModal
+          teacher={recordTarget}
           totalPoint={recordTarget.total_point}
           onClose={() => setRecordTarget(null)}
         />

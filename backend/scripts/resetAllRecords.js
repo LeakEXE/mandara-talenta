@@ -1,15 +1,17 @@
-// Full data reset: wipes every IPT record, approval queue, log, notification
-// and wali-kelas assignment, plus their evidence files — everything EXCEPT
-// users/permissions and all configurations (IPT points, school, access).
+// Full data reset: wipes every IPT record, approval queue, log and
+// notification, plus their evidence files — everything EXCEPT users,
+// permissions, wali-kelas assignments and all configurations (IPT points,
+// school, access).
 // Student totals are reset to their ipt_awal (otherwise phantom points
 // from the wiped records would remain).
 //
-// Wiped tables (19): prestasi, organisasi, kepanitiaan, event, pelanggaran,
+// Wiped tables (18): prestasi, organisasi, kepanitiaan, event, pelanggaran,
 //   perilaku, prestasi/event/organisasi/kepanitiaan/siswa/biodata_update/
 //   student_creation approvals, password_reset_requests, activity_logs,
-//   ipt_history, input_access_logs, notifications, wali_kelas_assignment.
-// Kept: users, permissions, approval_scopes, ipt_config (+organisasi,
-//   perilaku, pelanggaran tables), school_config, input_access_control.
+//   ipt_history, input_access_logs, notifications.
+// Kept: users, permissions, approval_scopes, wali_kelas_assignment,
+//   ipt_config (+organisasi, perilaku, pelanggaran tables), school_config,
+//   input_access_control.
 // Emptied upload folders: prestasi, event, organisasi, kepanitiaan,
 //   pelanggaran, perilaku, approvals, approved/. Kept: avatars/, logos/.
 //
@@ -43,7 +45,6 @@ const WIPE_TABLES = [
     'ipt_history',
     'input_access_logs',
     'notifications',
-    'wali_kelas_assignment',
 ];
 
 // Evidence folders emptied (contents only, folders themselves stay).
