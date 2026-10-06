@@ -344,7 +344,7 @@ function Dashboard() {
           <div className="kpi-grid">
             {[
               { label: 'Total Siswa', value: stats.total_students || 0, sub: 'Siswa aktif terdaftar', icon: Users, mod: 'is-blue' },
-              { label: 'Total Guru', value: stats.total_teachers || 0, sub: 'Guru terdaftar', icon: GraduationCap, mod: 'is-teal' },
+              { label: 'Total Guru & Pegawai', value: stats.total_teachers || 0, sub: 'Guru dan pegawai terdaftar', icon: GraduationCap, mod: 'is-teal' },
               { label: 'Rata-rata IPT', value: stats.ipt_stats?.rata_rata || 0, sub: 'Rata-rata seluruh siswa', icon: BarChart3, mod: 'is-green' },
               { label: 'IPT Tertinggi', value: stats.ipt_stats?.tertinggi || 0, sub: 'Poin tertinggi', icon: Trophy, mod: 'is-amber' }
             ].map((k) => (
