@@ -183,6 +183,7 @@ function Dashboard() {
 
   const topStudents = useMemo(() => stats?.top_ipt_students || [], [stats]);
   const top3 = useMemo(() => topStudents.slice(0, 3), [topStudents]);
+  const noticeText = (schoolConfig?.announcement ?? 'Selamat datang di Mandara Talenta — Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara').trim();
 
   if (loading) {
     return (
@@ -247,18 +248,20 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* NOTICE */}
+      {/* NOTICE — configurable via /school-config; hidden when cleared */}
+      {noticeText && (
       <div className="dash-notice" role="status">
         <div className="dash-notice-track">
           {[0, 1].map((i) => (
             <div className="dash-notice-group" key={i}>
               <Megaphone size={14} style={{ marginRight: '8px', flexShrink: 0 }} />
-              <span>Selamat datang di Mandara Talenta — Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara</span>
+              <span>{noticeText}</span>
               <span className="dash-notice-dot" />
             </div>
           ))}
         </div>
       </div>
+      )}
 
       {/* TITLE ROW */}
       <div className="dash-title-row">
