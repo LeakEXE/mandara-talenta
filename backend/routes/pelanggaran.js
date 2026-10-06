@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { calculatePelanggaranPoints } = require('../constants/points');
 const { resolveStudentIdByNis } = require('../utils/ipt');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan, evidenceSourcePath } = require('../utils/fileUtils');
+const { movePhotoToApprovedFolder, deletePhotoIfOrphan, evidenceSourcePath, replaceEvidenceFile } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
@@ -234,26 +234,17 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         const pelanggaranData = pelanggaran[0];
         let foto = pelanggaranData.foto;
 
-        // Handle new photo upload
+        // Swap evidence for the new upload (keeps the timestamp-unique
+        // multer name; approved rows land in approved/).
         if (req.file) {
-            // Delete old photo if exists (any stored shape: full or bare)
-            if (foto) {
-                const oldPath = resolveUploadPath(evidenceSourcePath(foto, 'pelanggaran'));
-                if (oldPath && fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
-                }
-            }
-
-            // Rename new file
-            const ext = path.extname(req.file.originalname);
-            const uniqueId = Date.now().toString(36);
-            const newFileName = `${nis}_${keterangan}_${uniqueId}${ext}`;
-            const oldPath = resolveUploadPath(path.join('uploads/pelanggaran', req.file.filename));
-            const newPath = resolveUploadPath(path.join('uploads/pelanggaran', newFileName));
-            fs.renameSync(oldPath, newPath);
-            // Store the canonical full relative path (bare names break
-            // viewers that concatenate the URL directly).
-            foto = `uploads/pelanggaran/${newFileName}`;
+            const next = await replaceEvidenceFile(db, {
+                oldFoto: foto,
+                uploadedFilename: req.file.filename,
+                recordType: 'pelanggaran',
+                approved: pelanggaranData.status === 'approved',
+                exclude: { table: 'pelanggaran', id: pelanggaranId }
+            });
+            if (next) foto = next;
         }
 
         // Recalculate points if jenis_pelanggaran changed

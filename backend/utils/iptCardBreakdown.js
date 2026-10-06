@@ -18,6 +18,8 @@ function createEmptyPoints(iptAwal = 80) {
     return {
         point_awal: iptAwal,
         prestasi: 0,
+        prestasi_akademik: 0,
+        prestasi_non_akademik: 0,
         tanggung_jawab: 0,
         disiplin: 0,
         kepedulian: 0,
@@ -116,10 +118,19 @@ async function buildIptCardBreakdown(userId, cutoff = null, queryFn = null) {
     const beforeParam = (params) => (cutoff ? [...params, cutoff] : params);
 
     const [prestasi] = await q(
-        `SELECT point FROM prestasi WHERE user_id = ? AND status = 'approved'${before}`,
+        `SELECT point, jenis_lomba FROM prestasi WHERE user_id = ? AND status = 'approved'${before}`,
         beforeParam([userId])
     );
     points.prestasi = prestasi.reduce((sum, row) => sum + (row.point || 0), 0);
+    // Rincian prestasi per kategori untuk cetakan individual.
+    // jenis_lomba 'non_akademik' -> Non-akademik; lainnya (termasuk NULL/legacy) -> Akademik.
+    for (const row of prestasi) {
+        if (row.jenis_lomba === 'non_akademik') {
+            points.prestasi_non_akademik += row.point || 0;
+        } else {
+            points.prestasi_akademik += row.point || 0;
+        }
+    }
 
     const [organisasi] = await q(
         `SELECT point FROM organisasi WHERE user_id = ? AND status = 'approved'${before}`,

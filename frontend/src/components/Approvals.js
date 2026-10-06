@@ -33,6 +33,8 @@ function Approvals() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [notes, setNotes] = useState('');
   const [message, setMessage] = useState('');
+  // Group roster popup: the clicked kelompok entry (members shown on demand)
+  const [groupPopup, setGroupPopup] = useState(null);
   // Access gating: superadmin always; others need at least one approval scope.
   const [hasAccess, setHasAccess] = useState(false);
   // Enlarged photo popup (same pattern as DriveViewer: URL string or null)
@@ -138,6 +140,31 @@ function Approvals() {
 
   const getApprovalStatus = (item) => item.superadmin_status || item.status || 'pending';
 
+  // Clickable "Kelompok · N siswa" label shared by desktop + mobile.
+  // Opens the roster popup instead of inlining every member name.
+  const renderGroupLabel = (item) => (
+    <button
+      onClick={() => setGroupPopup(item)}
+      title="Lihat anggota kelompok"
+      style={{
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        fontSize: '12px',
+        fontWeight: '600',
+        color: BLUE,
+        fontFamily: 'inherit',
+        textDecoration: 'underline',
+        textUnderlineOffset: '2px'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.color = BLUE_DARK}
+      onMouseLeave={(e) => e.currentTarget.style.color = BLUE}
+    >
+      Kelompok · {item._groupSize} siswa
+    </button>
+  );
+
   const renderTable = (data, type) => {
     if (data.length === 0) {
       return (
@@ -170,7 +197,7 @@ function Approvals() {
           grouped.push({
             ...item,
             _groupSize: members.length,
-            _memberNames: members.map((m) => `${m.nama} (${m.nis})`)
+            _members: members.map((m) => ({ nama: m.nama, nis: m.nis, kelas: m.kelas }))
           });
         } else {
           grouped.push(item);
@@ -301,8 +328,8 @@ function Approvals() {
                 NIS {item.nis || item.nis_lama || '-'} · diajukan oleh {item.user_name || item.requested_by_name || 'Unknown'}
               </div>
               {item._groupSize > 1 && (
-                <div style={{ fontSize: '12.5px', color: TEXT, fontWeight: '600', marginTop: '4px' }}>
-                  Kelompok · {item._groupSize} siswa: {item._memberNames.join(', ')}
+                <div style={{ marginTop: '4px' }}>
+                  {renderGroupLabel(item)}
                 </div>
               )}
             </div>
@@ -553,8 +580,8 @@ function Approvals() {
                   color: TEXT
                 }}>{item.nama || item.student_name}
                   {item._groupSize > 1 && (
-                    <div style={{ fontWeight: '500', fontSize: '12px', color: MUTED, marginTop: '2px' }}>
-                      Kelompok · {item._groupSize} siswa
+                    <div style={{ marginTop: '2px' }}>
+                      {renderGroupLabel(item)}
                     </div>
                   )}</td>
                 <td style={{
@@ -562,12 +589,7 @@ function Approvals() {
                   borderBottom: `1px solid ${BORDER}`,
                   verticalAlign: "middle",
                   color: TEXT
-                }}>{item.nis || item.nis_lama || item.student_nis}
-                  {item._groupSize > 1 && (
-                    <div style={{ fontSize: '12px', color: MUTED, marginTop: '2px' }}>
-                      {item._memberNames.join(', ')}
-                    </div>
-                  )}</td>
+                }}>{item.nis || item.nis_lama || item.student_nis}</td>
                 {type === 'prestasi' && (
                   <>
                     <td style={{
@@ -991,7 +1013,7 @@ function Approvals() {
             </h3>
             {selectedItem._groupSize > 1 && (
               <div className="alert alert-warning" style={{ marginBottom: '16px' }}>
-                Pengajuan kelompok — keputusan ini berlaku untuk {selectedItem._groupSize} siswa ({(selectedItem._memberNames || []).join(', ')})
+                Pengajuan kelompok — keputusan ini berlaku untuk {selectedItem._groupSize} siswa.
               </div>
             )}
             <div style={{ marginBottom: '16px' }}>
@@ -1096,6 +1118,88 @@ function Approvals() {
                 onClick={() => { setSelectedItem(null); setNotes(''); }}
               >
                 Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {groupPopup && (
+        <div
+          className="app-modal-overlay"
+          onClick={() => setGroupPopup(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1500,
+            animation: 'approvalFade 0.2s ease'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: CARD,
+              border: `1px solid ${BORDER}`,
+              borderRadius: RADIUS,
+              boxShadow: '0 12px 30px -10px rgba(0,0,0,.4)',
+              width: '440px',
+              maxWidth: '90%',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              padding: '24px',
+              animation: 'fadeSlide 0.28s ease'
+            }}
+          >
+            <h3 style={{ fontSize: '18px', fontWeight: '700', margin: '0 0 4px', color: TEXT }}>
+              Anggota Kelompok
+            </h3>
+            <p style={{ fontSize: '13px', color: MUTED, margin: '0 0 16px' }}>
+              {groupPopup.nama_lomba} · {groupPopup._groupSize} siswa
+            </p>
+            <div>
+              {(groupPopup._members || []).map((m, i) => (
+                <div
+                  key={`${m.nis}-${i}`}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    padding: '10px 0',
+                    borderBottom: i < groupPopup._members.length - 1 ? `1px solid ${BORDER}` : 'none',
+                    fontSize: '14px'
+                  }}
+                >
+                  <span style={{ fontWeight: '600', color: TEXT }}>{i + 1}. {m.nama}</span>
+                  <span style={{ color: MUTED, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    {m.nis}
+                    <span style={{ display: 'block', fontSize: '12px' }}>{m.kelas || '-'}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  border: `1px solid ${BORDER}`,
+                  borderRadius: '8px',
+                  padding: '10px 18px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  color: TEXT,
+                  background: '#eceff3'
+                }}
+                onClick={() => setGroupPopup(null)}
+              >
+                Tutup
               </button>
             </div>
           </div>

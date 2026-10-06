@@ -3,12 +3,13 @@ import ExcelJS from 'exceljs';
 // ------------------------------------------------------------------
 // Individual Point Talent Excel ("Raport IPT")
 // Layout direplika dari dokumen resmi sekolah (format_ipt.xlsx):
-// kop di baris 1-8, judul 9-13, biodata 15-17, tabel point 19-37,
-// tanda tangan 40-46. Area cetak A1:L46, portrait A4.
-// Prestasi ditulis SATU baris gabungan (II, tanpa rincian Akademik/Non-Akademik).
+// kop di baris 1-8, judul 9-13, biodata 15-17, tabel point 19-39,
+// tanda tangan 42-48. Area cetak A1:L48, portrait A4.
+// Prestasi (II) dirinci per kategori: Akademik (22) + Non-akademik (23);
+// kolom A "II" TIDAK di-merge dengan B-G (berdiri sendiri seperti I, III...).
 // Baris Pelanggaran mengikuti SEMUA tingkat yang dikonfigurasi
 // (urut point terkecil -> terbesar). Jika tingkat > 3, tabel memanjang:
-// baris TOTAL/tanda tangan & area cetak bergeser sebanyak delta.
+// baris TOTAL/tanda tangan & area cetak bergeser mengikuti jumlah baris.
 // ------------------------------------------------------------------
 
 const TNR = 'Times New Roman';
@@ -27,12 +28,12 @@ const IPT_SHEET_PROTECT_OPTIONS = { selectLockedCells: true, selectUnlockedCells
 const COL_WIDTHS = [4.22, 4.11, 3.33, 3.22, 6.78, 7.78, 14.22, 7.22, 2.11, 3.22, 12, 4.44];
 
 const F_TITLE = { name: TNR, size: 12, bold: true };
-const F_TEXT = { name: TNR, size: 12 };
-const F_BOLD = { name: TNR, size: 12, bold: true };
-const F_SIGN = { name: TNR, size: 12, bold: true, underline: true };
+const F_TEXT = { name: TNR, size: 11 };
+const F_BOLD = { name: TNR, size: 11, bold: true };
+const F_SIGN = { name: TNR, size: 11, bold: true, underline: true };
 // Merah untuk baris Pelanggaran (point negatif) — sama dengan warna merah
 // nilai negatif pada leger kelas (LaporanCetak).
-const F_BOLD_RED = { name: TNR, size: 12, bold: true, color: { argb: 'FFC00000' } };
+const F_BOLD_RED = { name: TNR, size: 11, bold: true, color: { argb: 'FFC00000' } };
 
 const A_CENTER = { vertical: 'middle', horizontal: 'center', wrapText: true };
 const A_LEFT = { vertical: 'middle', horizontal: 'left', wrapText: true };
@@ -40,17 +41,20 @@ const A_LEFT_NW = { vertical: 'middle', horizontal: 'left' }; // tanpa wrap (are
 
 const MERGES = [
   'A9:K9', 'A11:K11', 'A12:K12', 'A13:K13',
-  'A15:C15', 'E15:G15', 'H15:I15',
-  'E16:G16', 'H16:I16',
-  'A17:C17', 'E17:G17', 'H17:I17',
+  'A15:C15', 'E15:H15', 'I15:K15',
+  'E16:H16', 'I16:K16',
+  'A17:C17', 'E17:H17', 'I17:K17',
   'A19:G19', 'H19:K19',
   'B20:G20', 'H20:K20',
-  'A21:G21', 'H21:K21',
-  'A22:A29', 'B22:G22', 'H22:K22',
-  'C23:G23', 'H23:K23', 'C24:G24', 'H24:K24', 'C25:G25', 'H25:K25',
-  'C26:G26', 'H26:K26', 'C27:G27', 'H27:K27', 'C28:G28', 'H28:K28',
-  'C29:G29', 'H29:K29',
-  'B30:G30', 'H30:K30', 'B31:G31', 'H31:K31', 'B32:G32', 'H32:K32',
+  // II Prestasi: A21 ("II") TIDAK di-merge — dinormalkan seperti kolom A lain.
+  // Header + 2 baris rincian (Akademik, Non-akademik).
+  'A21:A23', 'B21:G21', 'H21:K21',
+  'C22:G22', 'H22:K22', 'C23:G23', 'H23:K23',
+  'A24:A31', 'B24:G24', 'H24:K24',
+  'C25:G25', 'H25:K25', 'C26:G26', 'H26:K26', 'C27:G27', 'H27:K27',
+  'C28:G28', 'H28:K28', 'C29:G29', 'H29:K29', 'C30:G30', 'H30:K30',
+  'C31:G31', 'H31:K31',
+  'B32:G32', 'H32:K32', 'B33:G33', 'H33:K33', 'B34:G34', 'H34:K34',
 ];
 // Merge bagian bawah tabel (baris 35: header VII, item, dan TOTAL) dibangun
 // dinamis di createIndividualIptExcelBuffer sesuai jumlah tingkat pelanggaran.
@@ -134,8 +138,11 @@ const titleCase = (s) =>
 
 export function calcIndividualPoints(points = {}) {
   const pointAwal = num(points.point_awal) || 80;
-  // Prestasi is a single category (no more akademik/non-akademik split)
+  // Prestasi dirinci per kategori (jenis_lomba); total gabungan tetap
+  // dipakai untuk TOTAL agar konsisten dengan leger & users.ipt_total.
   const prestasi = num(points.prestasi);
+  const prestasiAkademik = num(points.prestasi_akademik);
+  const prestasiNonAkademik = num(points.prestasi_non_akademik);
   const tanggungJawab = num(points.tanggung_jawab);
   const disiplin = num(points.disiplin);
   const kepedulian = num(points.kepedulian);
@@ -159,7 +166,7 @@ export function calcIndividualPoints(points = {}) {
     organisasi + kepanitiaan + event +
     pelanggaranRingan + pelanggaranSedang + pelanggaranBerat + pelanggaranLainnya;
   return {
-    pointAwal, prestasi,
+    pointAwal, prestasi, prestasiAkademik, prestasiNonAkademik,
     tanggungJawab, disiplin, kepedulian, kemandirian, spiritual, kejujuran, kepercayaanDiri,
     organisasi, kepanitiaan, event,
     pelanggaranRingan, pelanggaranSedang, pelanggaranBerat, pelanggaranLainnya,
@@ -200,10 +207,13 @@ export async function createIndividualIptExcelBuffer({
   const langgarRows = levelSource.map((l) => [titleCase(l.name), num(l.total)]);
   while (langgarRows.length < 3) langgarRows.push(['', null]); // jaga format asli (3 baris)
   const nRows = langgarRows.length;
-  const delta = nRows - 3;              // >0: tabel & blok bawah memanjang
-  const lastItemRow = 33 + nRows;       // baris item terakhir Pelanggaran
-  const totalRow = 37 + delta;          // baris TOTAL POINT IPT
-  const signRow = 40 + delta;           // baris awal blok tanda tangan
+  // Seksi Prestasi (II) memakai 3 baris (header 21 + rincian 22-23),
+  // sehingga semua baris di bawahnya bergeser +2 dari format asli.
+  const rIII = 24;                      // header seksi III
+  const rVII = 35;                      // header seksi VII Pelanggaran
+  const lastItemRow = rVII + nRows;     // baris item terakhir Pelanggaran
+  const totalRow = lastItemRow + 1;     // baris TOTAL POINT IPT
+  const signRow = totalRow + 3;         // baris awal blok tanda tangan
 
   const schoolName = school.school_name || 'SMK Negeri Bali Mandara';
   const principalName = school.principal_name || 'Nama Kepala Sekolah';
@@ -222,21 +232,22 @@ export async function createIndividualIptExcelBuffer({
   // ExcelJS memakai inci & hanya menulis pageSetup.margins ke file
   // (properti pageMargins polos diabaikan saat tulis).
   sheet.pageSetup.margins = { left: 3.6 / 2.54, right: 0.2 / 2.54, top: 0.18, bottom: 0.3, header: 0.12, footer: 0.12 };
-  sheet.pageSetup.printArea = `A1:M${46 + delta}`;
+  sheet.pageSetup.printArea = `A1:M${totalRow + 9}`;
 
   COL_WIDTHS.forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
   // Tinggi baris: 20 untuk semua baris kecuali baris spacer (10).
-  // Mencakup area kop (1-8), isi, tabel (yang memanjang mengikuti delta),
-  // dan blok tanda tangan.
-  const lastBodyRow = 47 + delta;
+  // Mencakup area kop (1-8), isi, tabel (yang memanjang mengikuti
+  // jumlah tingkat pelanggaran), dan blok tanda tangan.
+  const lastBodyRow = totalRow + 10;
   for (let r = 1; r <= lastBodyRow; r++) {
     sheet.getRow(r).height = r === 10 ? ROW_HEIGHTS[10] : 20;
   }
 
-  // Merge baris 9-32 tetap; bagian bawah tabel mengikuti jumlah tingkat.
-  const tableTail = [`A33:A${lastItemRow}`, 'B33:G33', 'H33:K33'];
-  for (let r = 34; r <= lastItemRow; r++) tableTail.push(`C${r}:G${r}`, `H${r}:K${r}`);
+  // Merge bagian bawah tabel (header VII, item, dan TOTAL) mengikuti
+  // jumlah tingkat pelanggaran; baris 9-34 statis di MERGES.
+  const tableTail = [`A${rVII}:A${lastItemRow}`, `B${rVII}:G${rVII}`, `H${rVII}:K${rVII}`];
+  for (let r = rVII + 1; r <= lastItemRow; r++) tableTail.push(`C${r}:G${r}`, `H${r}:K${r}`);
   tableTail.push(`A${totalRow}:G${totalRow}`, `H${totalRow}:K${totalRow}`);
   [...MERGES, ...tableTail].forEach((m) => sheet.mergeCells(m));
 
@@ -258,23 +269,19 @@ export async function createIndividualIptExcelBuffer({
   setCell(sheet, 'A15', 'Nama', { font: F_TEXT, alignment: A_LEFT });
   setCell(sheet, 'D15', ':', { font: F_TEXT, alignment: A_CENTER });
   setCell(sheet, 'E15', student.nama || '-', { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'H15', 'Kelas', { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'J15', ':', { font: F_TEXT, alignment: A_CENTER });
-  setCell(sheet, 'K15', student.kelas || '-', { font: F_TEXT, alignment: A_LEFT });
+  setCell(sheet, 'I15', `Kelas : ${student.kelas || '-'}`, { font: F_TEXT, alignment: A_LEFT });
 
-  setCell(sheet, 'A16', 'NIS/NISN', { font: F_TEXT, alignment: A_LEFT });
+  setCell(sheet, 'A16', 'NIS', { font: F_TEXT, alignment: A_LEFT });
   setCell(sheet, 'D16', ':', { font: F_TEXT, alignment: A_CENTER });
   setCell(sheet, 'E16', student.nis != null ? String(student.nis) : '-', { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'H16', 'Grha', { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'J16', ':', { font: F_TEXT, alignment: A_CENTER });
-  setCell(sheet, 'K16', student.grha || '-', { font: F_TEXT, alignment: A_LEFT });
+  setCell(sheet, 'I16', `Grha : ${student.grha || '-'}`, { font: F_TEXT, alignment: A_LEFT });
 
+  // Nama wali mendapat merge E17:H17 (+1 kolom dari format asli) agar
+  // nama panjang tidak terpotong; blok Semester digabung di I17:K17.
   setCell(sheet, 'A17', 'Wali Kelas', { font: F_TEXT, alignment: A_LEFT });
   setCell(sheet, 'D17', ':', { font: F_TEXT, alignment: A_CENTER });
   setCell(sheet, 'E17', waliNama, { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'H17', 'Semester', { font: F_TEXT, alignment: A_LEFT });
-  setCell(sheet, 'J17', ':', { font: F_TEXT, alignment: A_CENTER });
-  setCell(sheet, 'K17', semester, { font: F_TEXT, alignment: A_LEFT });
+  setCell(sheet, 'I17', `Semester : ${semester}`, { font: F_TEXT, alignment: A_LEFT });
 
   // Tabel point
   setCell(sheet, 'A19', 'Point IPT', { font: F_BOLD, alignment: A_CENTER });
@@ -284,13 +291,21 @@ export async function createIndividualIptExcelBuffer({
   setCell(sheet, 'B20', 'Point Awal', { font: F_BOLD, alignment: A_CENTER });
   setCell(sheet, 'H20', p.pointAwal, { font: F_BOLD, alignment: A_CENTER });
 
-  // Prestasi = gabungan Akademik + Non-Akademik dalam satu baris (II)
+  // Prestasi (II): A21 ("II") berdiri sendiri; rincian Akademik (22)
+  // dan Non-akademik (23) mengikuti pola seksi III/VII.
   setCell(sheet, 'A21', 'II', { font: F_BOLD, alignment: A_CENTER });
   setCell(sheet, 'B21', 'Prestasi', { font: F_BOLD, alignment: A_CENTER });
-  setCell(sheet, 'H21', p.prestasi, { font: F_TEXT, alignment: A_CENTER });
 
-  setCell(sheet, 'A22', 'III', { font: F_BOLD, alignment: A_CENTER });
-  setCell(sheet, 'B22', 'Perkembangan karakter', { font: F_BOLD, alignment: A_CENTER });
+  const prestasiRows = [['Akademik', p.prestasiAkademik], ['Non-akademik', p.prestasiNonAkademik]];
+  prestasiRows.forEach(([label, val], i) => {
+    const r = 22 + i;
+    setCell(sheet, `B${r}`, i + 1, { font: F_TEXT, alignment: A_CENTER });
+    setCell(sheet, `C${r}`, label, { font: F_TEXT, alignment: A_CENTER });
+    setCell(sheet, `H${r}`, val, { font: F_TEXT, alignment: A_CENTER });
+  });
+
+  setCell(sheet, `A${rIII}`, 'III', { font: F_BOLD, alignment: A_CENTER });
+  setCell(sheet, `B${rIII}`, 'Perkembangan karakter', { font: F_BOLD, alignment: A_CENTER });
 
   const karakterRows = [
     ['Tanggung Jawab', p.tanggungJawab], ['Disiplin', p.disiplin], ['Kepedulian', p.kepedulian],
@@ -298,27 +313,28 @@ export async function createIndividualIptExcelBuffer({
     ['Kepercayaan Diri', p.kepercayaanDiri],
   ];
   karakterRows.forEach(([label, val], i) => {
-    const r = 23 + i;
+    const r = rIII + 1 + i;
     setCell(sheet, `B${r}`, i + 1, { font: F_TEXT, alignment: A_CENTER });
     setCell(sheet, `C${r}`, label, { font: F_TEXT, alignment: A_CENTER });
     setCell(sheet, `H${r}`, val, { font: F_TEXT, alignment: A_CENTER });
   });
 
+  const rIV = rIII + 8;
   const aktifRows = [['IV', 'Organisasi', p.organisasi], ['V', 'Kepanitiaan', p.kepanitiaan], ['VI', 'Event', p.event]];
   aktifRows.forEach(([roman, label, val], i) => {
-    const r = 30 + i;
+    const r = rIV + i;
     setCell(sheet, `A${r}`, roman, { font: F_BOLD, alignment: A_CENTER });
     setCell(sheet, `B${r}`, label, { font: F_BOLD, alignment: A_CENTER });
     setCell(sheet, `H${r}`, val, { font: F_TEXT, alignment: A_CENTER });
   });
 
-  setCell(sheet, 'A33', 'VII', { font: F_BOLD, alignment: A_CENTER });
-  setCell(sheet, 'B33', 'Pelanggaran', { font: F_BOLD, alignment: A_CENTER });
+  setCell(sheet, `A${rVII}`, 'VII', { font: F_BOLD, alignment: A_CENTER });
+  setCell(sheet, `B${rVII}`, 'Pelanggaran', { font: F_BOLD, alignment: A_CENTER });
 
   // Satu baris per tingkat (sudah diurutkan; nilai negatif = pengurangan)
   // — hanya nilai Point (kolom H) yang dicetak merah.
   langgarRows.forEach(([label, val], i) => {
-    const r = 34 + i;
+    const r = rVII + 1 + i;
     setCell(sheet, `B${r}`, i + 1, { font: F_TEXT, alignment: A_CENTER });
     setCell(sheet, `C${r}`, label, { font: F_TEXT, alignment: A_CENTER });
     setCell(sheet, `H${r}`, val, { font: F_TEXT, alignment: A_CENTER });

@@ -6,7 +6,7 @@ const multer = require('multer');
 const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
 const path = require('path');
 const fs = require('fs');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
+const { movePhotoToApprovedFolder, deletePhotoIfOrphan, replaceEvidenceFile } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits: EVIDENCE_LIMITS });
 const { calculatePrestasiPoints } = require('../constants/points');
-const { buildKeterangan, resolvePembina } = require('../utils/ipt');
+const { buildKeterangan, resolvePembina, resolveStudentIdByNis } = require('../utils/ipt');
 
 // Get all prestasi (for approvals)
 router.get('/all', auth, async (req, res) => {
@@ -243,57 +243,171 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         }
 
         const prestasiData = prestasi[0];
-        let foto = prestasiData.foto;
+        const isGroup = prestasiData.kategori_lomba === 'kelompok' && prestasiData.grup_lomba;
 
-        // Handle new photo upload
-        if (req.file) {
-            // Delete old photo if exists
-            if (foto) {
-                const oldPath = resolveUploadPath(path.join('uploads/prestasi', foto));
-                if (fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
-                }
+        // Kelompok member list (JSON string in multipart, same as submit).
+        // Shared-field edits apply to every surviving sibling; membership
+        // itself is diffed below (added rows + reverted removals).
+        let anggota = null;
+        if (isGroup && req.body.anggota !== undefined) {
+            try {
+                anggota = typeof req.body.anggota === 'string' ? JSON.parse(req.body.anggota) : req.body.anggota;
+            } catch {
+                return res.status(400).json({ message: 'Format data anggota tidak valid' });
             }
-            
-            // Rename new file
-            const ext = path.extname(req.file.originalname);
-            const newFileName = `${nis}_${nama_lomba}${ext}`;
-            const oldPath = resolveUploadPath(path.join('uploads/prestasi', req.file.filename));
-            const newPath = resolveUploadPath(path.join('uploads/prestasi', newFileName));
-            fs.renameSync(oldPath, newPath);
-            foto = newFileName;
+            if (!Array.isArray(anggota) || anggota.length < 2) {
+                return res.status(400).json({ message: 'Lomba kelompok membutuhkan minimal 2 anggota' });
+            }
         }
 
-        // Recalculate points if juara or kategori changed
+        // Recalculate points (shared by the whole group)
         const point = await calculatePrestasiPoints(juara, kategori);
 
         // Keep pembina link consistent when the name changes
         const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(req.body.pembina_id, pembina);
 
+        // Evidence: a new upload keeps its timestamp-unique multer name.
+        // Queued rows keep the type-folder path; approved rows land in
+        // approved/ (same scheme as submit + approve).
+        let newFotoPath = null;
+        if (req.file) {
+            newFotoPath = `uploads/prestasi/${req.file.filename}`;
+            if (prestasiData.status === 'approved') {
+                const moved = movePhotoToApprovedFolder(newFotoPath, 'prestasi');
+                if (moved) newFotoPath = path.join('uploads', moved).replace(/\\/g, '/');
+            }
+        }
+
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
 
-            const [upd] = await conn.query(
-                'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, point = ? WHERE id = ?',
-                [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point, prestasiId]
-            );
-            if (upd.affectedRows === 0) {
-                await conn.rollback();
-                return res.status(404).json({ message: 'Prestasi not found' });
-            }
+            if (!isGroup) {
+                let foto = prestasiData.foto;
+                if (newFotoPath) {
+                    foto = newFotoPath;
+                    if (prestasiData.foto) {
+                        await deletePhotoIfOrphan(conn, prestasiData.foto, { exclude: { table: 'prestasi', id: prestasiId }, folderHint: 'prestasi' });
+                    }
+                }
 
-            // Approved records feed the total: recompute it (same formula as
-            // syncIpt.js) so point edits — and any pre-existing drift — land
-            // exactly. Pending records never touched IPT.
-            if (prestasiData.status === 'approved') {
-                await recomputeAndStoreIpt(prestasiData.user_id, {
-                    jenis: 'prestasi_update',
-                    keterangan: `Update Prestasi: ${nama_lomba}`,
-                    executor: conn.query,
-                    recordType: 'prestasi',
-                    recordId: prestasiId,
-                });
+                const [upd] = await conn.query(
+                    'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, point = ? WHERE id = ?',
+                    [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point, prestasiId]
+                );
+                if (upd.affectedRows === 0) {
+                    await conn.rollback();
+                    return res.status(404).json({ message: 'Prestasi not found' });
+                }
+
+                // Approved records feed the total: recompute it (same formula as
+                // syncIpt.js) so point edits — and any pre-existing drift — land
+                // exactly. Pending records never touched IPT.
+                if (prestasiData.status === 'approved') {
+                    await recomputeAndStoreIpt(prestasiData.user_id, {
+                        jenis: 'prestasi_update',
+                        keterangan: `Update Prestasi: ${nama_lomba}`,
+                        executor: conn.query,
+                        recordType: 'prestasi',
+                        recordId: prestasiId,
+                    });
+                }
+            } else {
+                // ---- kelompok path: shared fields + membership diff ----
+                const [siblings] = await conn.query(
+                    'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE grup_lomba = ?',
+                    [prestasiData.grup_lomba]
+                );
+
+                // Resolve the target membership (explicit list, or unchanged).
+                let members;
+                if (anggota) {
+                    members = [];
+                    for (const a of anggota) {
+                        if (!a || !a.nis) {
+                            await conn.rollback();
+                            return res.status(400).json({ message: 'Setiap anggota harus memiliki NIS' });
+                        }
+                        // Throws 400 when the NIS is unknown
+                        const memberId = await resolveStudentIdByNis(a.nis, req.user.id);
+                        const [studentData] = await conn.query('SELECT id, nama, nis, kelas, grha FROM users WHERE id = ?', [memberId]);
+                        members.push(studentData[0]);
+                    }
+                } else {
+                    members = siblings.map((s) => ({ id: s.user_id, nama: s.nama, nis: s.nis, kelas: s.kelas, grha: s.grha }));
+                }
+
+                const existingIds = new Set(siblings.map((s) => s.user_id));
+                const newIds = new Set(members.map((m) => m.id));
+                const kept = siblings.filter((s) => newIds.has(s.user_id));
+                const added = members.filter((m) => !existingIds.has(m.id));
+                const removed = siblings.filter((s) => !newIds.has(s.user_id));
+                const sharedFoto = newFotoPath || siblings[0]?.foto || prestasiData.foto;
+                const wasApproved = prestasiData.status === 'approved';
+                const touchedUserIds = new Set();
+
+                // Serialize concurrent mutations of every touched student.
+                if (wasApproved) {
+                    for (const uid of new Set([...kept.map((s) => s.user_id), ...added.map((m) => m.id), ...removed.map((s) => s.user_id)])) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [uid]);
+                    }
+                }
+
+                // Shared-field update for surviving rows (identity untouched).
+                for (const s of kept) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await conn.query(
+                        'UPDATE prestasi SET nama_lomba = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, pembina = ?, pembina_id = ?, foto = ?, point = ? WHERE id = ?',
+                        [nama_lomba, juara, kategori, jenis_lomba, 'kelompok', resolvedPembinaName, resolvedPembinaId, sharedFoto, point, s.id]
+                    );
+                    touchedUserIds.add(s.user_id);
+                }
+
+                // Added members: new rows carrying the shared fields.
+                for (const m of added) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await conn.query(
+                        'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, 'kelompok', prestasiData.grup_lomba, sharedFoto, point, prestasiData.status]
+                    );
+                    touchedUserIds.add(m.id);
+                }
+
+                // Removed members: rows deleted, IPT reverted when approved.
+                for (const s of removed) {
+                    // eslint-disable-next-line no-await-in-loop
+                    await conn.query('DELETE FROM prestasi WHERE id = ?', [s.id]);
+                    touchedUserIds.add(s.user_id);
+                    if (wasApproved) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await recomputeAndStoreIpt(s.user_id, {
+                            jenis: 'prestasi_delete',
+                            keterangan: `Delete Prestasi: ${s.nama_lomba}`,
+                            executor: conn.query,
+                            skipHistory: true,
+                        });
+                        // eslint-disable-next-line no-await-in-loop
+                        await purgeRecordHistory(s.user_id, 'prestasi', s.id, recordLifecycleKeterangans('prestasi', s), conn.query);
+                    }
+                }
+
+                // Recompute every touched total when approved (pending never fed IPT).
+                if (wasApproved) {
+                    for (const uid of touchedUserIds) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await recomputeAndStoreIpt(uid, {
+                            jenis: 'prestasi_update',
+                            keterangan: `Update Prestasi kelompok: ${nama_lomba}`,
+                            executor: conn.query,
+                        });
+                    }
+                }
+
+                // Old shared evidence is orphaned only once no row uses it.
+                if (newFotoPath && prestasiData.foto) {
+                    await deletePhotoIfOrphan(conn, prestasiData.foto, { folderHint: 'prestasi' });
+                }
             }
 
             // Log activity

@@ -40,6 +40,8 @@ function InputPrestasi() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [userRole, setUserRole] = useState('');
   const [canApprove, setCanApprove] = useState(false);
+  const [editMembers, setEditMembers] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const editModal = useEditModal();
   const [iptConfig, setIptConfig] = useState([]);
   const [calculatedPoint, setCalculatedPoint] = useState(0);
@@ -111,7 +113,32 @@ function InputPrestasi() {
   };
 
   const handleEdit = (item) => {
+    if (item.kategori_lomba === 'kelompok' && item.grup_lomba) {
+      const sibs = allPrestasi.filter(p => p.grup_lomba === item.grup_lomba);
+      setEditMembers(sibs.map(s => ({ value: s.nis, label: `${s.nama} (${s.nis})`, nama: s.nama, nis: s.nis, kelas: s.kelas, grha: s.grha })));
+    } else {
+      setEditMembers([]);
+    }
     editModal.openEditModal(item);
+  };
+
+  const handleDeleteGroup = async (members) => {
+    const ids = members.map(m => m.id);
+    if (!window.confirm(`Hapus ${members.length} data prestasi kelompok "${members[0]?.nama_lomba}"? IPT akan dikembalikan untuk data yang sudah disetujui.`)) {
+      return;
+    }
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await api.delete(`/prestasi/${id}`);
+        ok += 1;
+      } catch {
+        // counted below
+      }
+    }
+    setMessage(ok === ids.length ? 'Data kelompok berhasil dihapus!' : `${ok} dari ${ids.length} data kelompok berhasil dihapus.`);
+    setSelectedIndexIds(prev => prev.filter(selectedId => !ids.includes(selectedId)));
+    fetchAllPrestasi();
   };
 
   const handleDelete = async (id) => {
@@ -193,17 +220,23 @@ function InputPrestasi() {
   const handleUpdate = async () => {
     editModal.setIsLoading(true);
     try {
+      const isGroupEdit = editModal.editingItem?.kategori_lomba === 'kelompok' && editModal.editingItem?.grup_lomba;
+      if (isGroupEdit && editMembers.length < 2) {
+        setMessage('Lomba kelompok membutuhkan minimal 2 anggota');
+        editModal.setIsLoading(false);
+        return;
+      }
       const data = new FormData();
       Object.keys(editModal.editFormData).forEach(key => {
-        if (key !== 'id' && key !== 'created_at' && key !== 'status' && key !== 'user_id') {
-          data.append(key, editModal.editFormData[key]);
+        if (key !== 'id' && key !== 'created_at' && key !== 'status' && key !== 'user_id' && key !== 'foto') {
+          data.append(key, editModal.editFormData[key] ?? '');
         }
       });
+      if (isGroupEdit) {
+        data.append('anggota', JSON.stringify(editMembers.map(m => ({ nama: m.nama, nis: m.nis }))));
+      }
       if (editModal.editFoto) {
-        const fileToUpload = editModal.editFormData.nis
-          ? new File([editModal.editFoto], `${editModal.editFormData.nis}_${editModal.editFoto.name}`, { type: editModal.editFoto.type })
-          : editModal.editFoto;
-        data.append('foto', fileToUpload);
+        data.append('foto', editModal.editFoto);
       }
 
       await api.put(`/prestasi/${editModal.editingItem.id}`, data);
@@ -527,6 +560,54 @@ function InputPrestasi() {
 
   const showStaffIndex = userRole === 'superadmin' || canApprove;
 
+  // Kelompok rows (same grup_lomba) collapse into one expandable entry.
+  const groupedIndex = [];
+  {
+    const seen = new Map();
+    filteredPrestasi.forEach(item => {
+      if (item.kategori_lomba === 'kelompok' && item.grup_lomba) {
+        if (!seen.has(item.grup_lomba)) {
+          const g = { groupId: item.grup_lomba, members: [] };
+          seen.set(item.grup_lomba, g);
+          groupedIndex.push(g);
+        }
+        seen.get(item.grup_lomba).members.push(item);
+      } else {
+        groupedIndex.push({ groupId: null, members: [item] });
+      }
+    });
+  }
+  const toggleGroup = (gid) => setExpandedGroups(prev => ({ ...prev, [gid]: !prev[gid] }));
+  const toggleGroupSelect = (members) => {
+    const ids = members.map(m => m.id);
+    const allSelected = ids.length > 0 && ids.every(id => selectedIndexIds.includes(id));
+    if (allSelected) {
+      setSelectedIndexIds(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedIndexIds(prev => [...new Set([...prev, ...ids])]);
+    }
+  };
+  const tableColCount = userRole === 'superadmin' ? 13 : 12;
+  const isKelompokEdit = editModal.editingItem?.kategori_lomba === 'kelompok' && !!editModal.editingItem?.grup_lomba;
+
+  // Kelompok submissions (same grup_lomba) collapse into one history card.
+  const groupedSubmissions = [];
+  {
+    const seen = new Map();
+    submissions.forEach(sub => {
+      if ((sub.kategori_lomba === 'kelompok' || sub.grup_lomba) && sub.grup_lomba) {
+        if (!seen.has(sub.grup_lomba)) {
+          const g = { groupId: sub.grup_lomba, members: [] };
+          seen.set(sub.grup_lomba, g);
+          groupedSubmissions.push(g);
+        }
+        seen.get(sub.grup_lomba).members.push(sub);
+      } else {
+        groupedSubmissions.push({ groupId: null, members: [sub] });
+      }
+    });
+  }
+
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
@@ -618,7 +699,10 @@ function InputPrestasi() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPrestasi.map(item => (
+                  {groupedIndex.map(group => {
+                    if (!group.groupId) {
+                      const item = group.members[0];
+                      return (
                     <tr key={item.id}>
                       {userRole === 'superadmin' && (
                       <td>
@@ -645,7 +729,66 @@ function InputPrestasi() {
                         {userRole === 'superadmin' && (<button className="btn btn-danger" onClick={() => handleDelete(item.id)} style={{ padding: '3px 8px', fontSize: '12px' }}>Hapus</button>)}
                       </td>
                     </tr>
-                  ))}
+                      );
+                    }
+                    const members = group.members;
+                    const first = members[0];
+                    const ids = members.map(m => m.id);
+                    const allSelected = ids.length > 0 && ids.every(id => selectedIndexIds.includes(id));
+                    const expanded = !!expandedGroups[group.groupId];
+                    const statuses = [...new Set(members.map(m => m.status))];
+                    return (
+                      <>
+                      <tr key={group.groupId} style={{ background: '#f0f6ff' }}>
+                        {userRole === 'superadmin' && (
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() => toggleGroupSelect(members)}
+                          />
+                        </td>
+                        )}
+                        <td>{new Date(first.created_at).toLocaleDateString('id-ID')}</td>
+                        <td>
+                          <button onClick={() => toggleGroup(group.groupId)} title={expanded ? 'Sembunyikan anggota' : 'Lihat anggota'} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#1d4ed8', padding: 0 }}>
+                            {expanded ? '▾' : '▸'} Kelompok · {members.length} siswa
+                          </button>
+                        </td>
+                        <td>—</td>
+                        <td>{first.nama_lomba}</td>
+                        <td>{formatDisplayText(first.jenis_lomba || 'akademik')}</td>
+                        <td>Kelompok</td>
+                        <td>{formatDisplayText(first.juara)}</td>
+                        <td>{formatDisplayText(first.kategori)}</td>
+                        <td>{first.pembina || '-'}</td>
+                        <td>{first.point}</td>
+                        <td>
+                          <span style={{ display: 'inline-flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {statuses.map(s => <span key={s}>{getStatusBadge({ status: s })}</span>)}
+                          </span>
+                        </td>
+                        <td>
+                          <button className="btn btn-info" onClick={() => handleEdit(first)} style={{ padding: '3px 8px', fontSize: '12px', marginRight: '5px' }}>Edit</button>
+                          {userRole === 'superadmin' && (<button className="btn btn-danger" onClick={() => handleDeleteGroup(members)} style={{ padding: '3px 8px', fontSize: '12px' }}>Hapus</button>)}
+                        </td>
+                      </tr>
+                      {expanded && (
+                      <tr key={`${group.groupId}-members`}>
+                        <td colSpan={tableColCount} style={{ background: '#f8fafc', padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {members.map(m => (
+                              <span key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '999px', padding: '4px 6px 4px 12px', fontSize: '12px' }}>
+                                {m.nama} ({m.nis}) {getStatusBadge(m)}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                      )}
+                      </>
+                    );
+                  })}
                 </tbody>
               </table>
               {allPrestasi.length === 0 && (
@@ -887,6 +1030,33 @@ function InputPrestasi() {
         isLoading={editModal.isLoading}
         photoPreview={editModal.editingItem?.foto ? `${API_BASE_URL.replace('/api', '')}/${editModal.editingItem.foto}` : null}
       >
+        {isKelompokEdit && (
+        <div className="form-group">
+          <label>Anggota Kelompok (minimal 2) <span className="required">*</span></label>
+          <Select
+            isMulti
+            value={editMembers}
+            onChange={(selected) => setEditMembers(selected || [])}
+            options={students.map(student => ({ value: student.nis, label: `${student.nama} (${student.nis})`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
+            placeholder="Pilih 2 siswa atau lebih..."
+            isSearchable
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: '40px'
+              })
+            }}
+          />
+          {editMembers.length > 0 && (
+            <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>
+              {editMembers.length} siswa dipilih: {editMembers.map(m => m.nama).join(', ')}
+            </div>
+          )}
+        </div>
+        )}
+
+        {!isKelompokEdit && (
+        <>
         <div className="form-group">
           <label>Nama</label>
           <input
@@ -934,6 +1104,8 @@ function InputPrestasi() {
             ))}
           </select>
         </div>
+        </>
+        )}
 
         <div className="form-group">
           <label>Nama Lomba</label>
@@ -1010,8 +1182,13 @@ function InputPrestasi() {
             <p className="text-muted">Belum ada pengajuan</p>
           ) : (
             <div style={{ display: 'grid', gap: '10px' }}>
-              {submissions.map((sub, index) => (
-                <div key={sub.id || index} style={{
+              {groupedSubmissions.map((group, index) => {
+                const first = group.members[0];
+                const isGroup = !!group.groupId;
+                const statuses = [...new Set(group.members.map(m => m.status))];
+                const memberNames = group.members.map(m => `${m.nama} (${m.nis})`).join(', ');
+                return (
+                <div key={group.groupId || first.id || index} style={{
                   padding: '15px',
                   backgroundColor: '#f8f9fa',
                   borderRadius: '8px',
@@ -1022,22 +1199,26 @@ function InputPrestasi() {
                   alignItems: 'center'
                 }}>
                   <div>
-                    <strong style={{ fontSize: '14px' }}>{sub.nama_lomba}</strong>
+                    <strong style={{ fontSize: '14px' }}>
+                      {first.nama_lomba}
+                      {isGroup && <span style={{ marginLeft: '8px', fontSize: '12px', fontWeight: 600, color: '#1d4ed8' }}>Kelompok · {group.members.length} siswa</span>}
+                    </strong>
                     <p style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>
-                      {sub.nama} ({sub.nis}) - {formatDisplayText(sub.juara)} · {formatDisplayText(sub.jenis_lomba || 'akademik')} · {formatDisplayText(sub.kategori_lomba || 'individu')}
+                      {isGroup ? memberNames : `${first.nama} (${first.nis})`} - {formatDisplayText(first.juara)} · {formatDisplayText(first.jenis_lomba || 'akademik')} · {formatDisplayText(first.kategori_lomba || 'individu')}
                     </p>
                     <p style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>
-                      Pembina: {sub.pembina || '-'}
+                      Pembina: {first.pembina || '-'}
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
-                      Diajukan: {new Date(sub.created_at).toLocaleDateString('id-ID')}
+                      Diajukan: {new Date(first.created_at).toLocaleDateString('id-ID')}
                     </p>
                   </div>
-                  <div>
-                    {getStatusBadge(sub)}
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {statuses.map(s => <span key={s}>{getStatusBadge({ status: s })}</span>)}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

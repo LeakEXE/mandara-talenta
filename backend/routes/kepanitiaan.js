@@ -6,7 +6,7 @@ const multer = require('multer');
 const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
 const path = require('path');
 const fs = require('fs');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
+const { movePhotoToApprovedFolder, deletePhotoIfOrphan, replaceEvidenceFile } = require('../utils/fileUtils');
 const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
@@ -227,23 +227,17 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         const kepanitiaanData = kepanitiaan[0];
         let foto = kepanitiaanData.foto;
 
-        // Handle new photo upload
+        // Swap evidence for the new upload (keeps the timestamp-unique
+        // multer name; approved rows land in approved/).
         if (req.file) {
-            // Delete old photo if exists
-            if (foto) {
-                const oldPath = resolveUploadPath(path.join('uploads/kepanitiaan', foto));
-                if (fs.existsSync(oldPath)) {
-                    fs.unlinkSync(oldPath);
-                }
-            }
-            
-            // Rename new file
-            const ext = path.extname(req.file.originalname);
-            const newFileName = `${nis}_${jabatan_kepanitiaan}${ext}`;
-            const oldPath = resolveUploadPath(path.join('uploads/kepanitiaan', req.file.filename));
-            const newPath = resolveUploadPath(path.join('uploads/kepanitiaan', newFileName));
-            fs.renameSync(oldPath, newPath);
-            foto = newFileName;
+            const next = await replaceEvidenceFile(db, {
+                oldFoto: foto,
+                uploadedFilename: req.file.filename,
+                recordType: 'kepanitiaan',
+                approved: kepanitiaanData.status === 'approved',
+                exclude: { table: 'kepanitiaan', id: kepanitiaanId }
+            });
+            if (next) foto = next;
         }
 
         // Recalculate points if jabatan_kepanitiaan changed
