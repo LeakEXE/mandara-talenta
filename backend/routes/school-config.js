@@ -22,7 +22,7 @@ const logoUpload = multer({ storage: logoStorage });
 router.get('/public', async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT school_name, school_description, logo_url, support_link FROM school_config LIMIT 1'
+      'SELECT school_name, school_description, logo_url, support_link, announcement FROM school_config LIMIT 1'
     );
 
     if (rows.length === 0) {
@@ -55,7 +55,7 @@ router.use(auth);
 router.get('/', async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT id, school_name, school_description, principal_name, principal_nip, logo_url, support_link, created_at, updated_at FROM school_config LIMIT 1'
+      'SELECT id, school_name, school_description, principal_name, principal_nip, logo_url, support_link, announcement, created_at, updated_at FROM school_config LIMIT 1'
     );
 
     if (rows.length === 0) {
@@ -89,7 +89,7 @@ router.get('/', async (req, res) => {
 // PUT school configuration (superadmin only)
 router.put('/', async (req, res) => {
   try {
-    const { school_name, school_description, principal_name, principal_nip, logo_url, support_link } = req.body;
+    const { school_name, school_description, principal_name, principal_nip, logo_url, support_link, announcement } = req.body;
     
     // Check if user is superadmin
     if (req.user.role !== 'superadmin') {
@@ -103,16 +103,16 @@ router.put('/', async (req, res) => {
       // Update existing config
       await db.query(
         `UPDATE school_config 
-         SET school_name = ?, school_description = ?, principal_name = ?, principal_nip = ?, logo_url = ?, support_link = ?, updated_at = NOW()
+         SET school_name = ?, school_description = ?, principal_name = ?, principal_nip = ?, logo_url = ?, support_link = ?, announcement = ?, updated_at = NOW()
          WHERE id = ?`,
-        [school_name, school_description, principal_name, principal_nip, logo_url, support_link ?? null, existing[0].id]
+        [school_name, school_description, principal_name, principal_nip, logo_url, support_link ?? null, announcement ?? null, existing[0].id]
       );
     } else {
       // Insert new config
       await db.query(
-        `INSERT INTO school_config (school_name, school_description, principal_name, principal_nip, logo_url, support_link, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-        [school_name, school_description, principal_name, principal_nip, logo_url, support_link ?? null]
+        `INSERT INTO school_config (school_name, school_description, principal_name, principal_nip, logo_url, support_link, announcement, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [school_name, school_description, principal_name, principal_nip, logo_url, support_link ?? null, announcement ?? null]
       );
     }
     

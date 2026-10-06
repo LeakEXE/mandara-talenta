@@ -16,6 +16,7 @@ function SchoolConfig() {
     principal_name: '',
     principal_nip: '',
     support_link: '',
+    announcement: '',
     logo_url: null
   });
   const [loading, setLoading] = useState(true);
@@ -321,6 +322,39 @@ function SchoolConfig() {
             />
             <div style={{ fontSize: '12px', color: MUTED, marginTop: '6px' }}>
               Ditampilkan di halaman login pada teks "Butuh bantuan? Hubungi admin sekolah". Biarkan kosong untuk memakai link default.
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 0 }}>
+            <label htmlFor="announcement" style={{
+              display: 'block',
+              fontSize: '13px',
+              fontWeight: '600',
+              color: TEXT,
+              marginBottom: '6px'
+            }}>Teks Berjalan (Pengumuman Dashboard)</label>
+            <textarea
+              id="announcement"
+              value={config.announcement || ''}
+              onChange={(e) => setConfig({ ...config, announcement: e.target.value })}
+              rows={2}
+              placeholder="Selamat datang di Mandara Talenta ..."
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                border: `1px solid ${BORDER}`,
+                borderRadius: '10px',
+                fontSize: '14px',
+                fontFamily: 'inherit',
+                outline: 'none',
+                transition: 'border-color 0.15s ease',
+                resize: 'vertical'
+              }}
+              onFocus={(e) => e.currentTarget.style.borderColor = BLUE}
+              onBlur={(e) => e.currentTarget.style.borderColor = BORDER}
+            />
+            <div style={{ fontSize: '12px', color: MUTED, marginTop: '6px' }}>
+              Tampil sebagai teks berjalan di dashboard semua user. Kosongkan untuk menyembunyikan.
             </div>
           </div>
         </div>

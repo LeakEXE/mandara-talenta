@@ -582,6 +582,7 @@ CREATE TABLE school_config (
     principal_nip VARCHAR(50) DEFAULT '',
     logo_url VARCHAR(255) DEFAULT NULL,
     support_link VARCHAR(500) DEFAULT NULL,
+    announcement TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
