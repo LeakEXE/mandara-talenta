@@ -204,4 +204,41 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
     }
 });
 
+// Approved prestasi mentored by one pembina (any authenticated user — same
+// exposure level as the pembina leaderboard itself). Attribution mirrors the
+// leaderboard: pembina_id match, with legacy name-match fallback.
+router.get('/leaderboard/pembina/:pembinaId/records', auth, async (req, res) => {
+    try {
+        const pembinaId = parseInt(req.params.pembinaId, 10);
+        if (!Number.isInteger(pembinaId)) {
+            return res.status(400).json({ message: 'ID pembina tidak valid' });
+        }
+        const [teachers] = await db.query(
+            "SELECT id, nama FROM users WHERE id = ? AND role IN ('guru', 'pegawai')",
+            [pembinaId]
+        );
+        if (teachers.length === 0) {
+            return res.status(404).json({ message: 'Pembina tidak ditemukan' });
+        }
+        const [rows] = await db.query(
+            `SELECT p.id, p.user_id, p.nama_lomba, p.juara, p.kategori,
+                    p.jenis_lomba, p.kategori_lomba, p.grup_lomba, p.point,
+                    p.foto, p.created_at,
+                    u.nama AS student_nama, u.nis AS student_nis, u.kelas AS student_kelas
+             FROM prestasi p
+             JOIN users u ON u.id = p.user_id
+             LEFT JOIN users t ON t.nama = p.pembina AND t.role IN ('guru', 'pegawai')
+             WHERE p.status = 'approved'
+               AND p.pembina IS NOT NULL AND p.pembina <> ''
+               AND COALESCE(p.pembina_id, t.id) = ?
+             ORDER BY p.created_at DESC`,
+            [pembinaId]
+        );
+        res.json(rows);
+    } catch (error) {
+        console.error('Error fetching pembina records:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 module.exports = router;
