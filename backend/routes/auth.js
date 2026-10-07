@@ -7,10 +7,19 @@ const { loginLimiter } = require('../middleware/security');
 const { logActivity } = require('../utils/logger');
 
 // Helper: true when the request actually arrived over HTTPS (direct or via proxy)
+// Cloudflare Tunnel always sends CF-Visitor: {"scheme":"https"} on HTTPS
+// visitor connections, so honor it alongside X-Forwarded-Proto.
 const isRequestSecure = (req) => {
     if (!req) return false;
     if (req.secure) return true;
-    return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+    if (String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https') return true;
+    try {
+        const visitor = JSON.parse(req.headers['cf-visitor'] || 'null');
+        if (visitor && visitor.scheme === 'https') return true;
+    } catch {
+        // malformed header — treat as insecure
+    }
+    return false;
 };
 
 // Helper function to set secure HTTP-only cookie.

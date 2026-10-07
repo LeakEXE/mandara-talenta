@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { LogOut } from 'lucide-react';
+import InstallAppButton from './InstallAppButton';
 
 function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
   const [pendingCount, setPendingCount] = useState(0);
@@ -198,6 +199,9 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
               </a>
             </li>
           ))}
+          <li>
+            <InstallAppButton variant="sidebar" />
+          </li>
           <li>
             <button
               onClick={() => {

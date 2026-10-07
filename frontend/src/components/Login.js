@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../utils/api';
+import InstallAppButton from './InstallAppButton';
 
 // Default support link shown on the login page when school config has none set.
 const DEFAULT_SUPPORT_LINK = 'https://google.com';
@@ -406,9 +407,19 @@ function Login() {
             textAlign: 'center',
             fontSize: '.85rem',
             color: '#5b6478',
-            marginTop: '.4rem'
+            marginTop: '.4rem',
+            marginBottom: 0
           }}>
             Butuh bantuan? <a href={schoolConfig?.support_link || DEFAULT_SUPPORT_LINK} style={{ color: '#28396b', fontWeight: '600', textDecoration: 'none' }}>Hubungi admin sekolah</a>
+          </p>
+          <p style={{
+            textAlign: 'center',
+            fontSize: '.85rem',
+            color: '#5b6478',
+            marginTop: '.4rem',
+            marginBottom: 0
+          }}>
+            <InstallAppButton />
           </p>
         </form>
       </div>
