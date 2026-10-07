@@ -1,7 +1,7 @@
 /**
  * Maps ipt_history `keterangan` text to the source record's evidence photo.
  *
- * History rows carry no record id — only free text like `Prestasi: Lomba X`
+ * History rows carry no record id only free text like `Prestasi: Lomba X`
  * (direct-submit path) or `Prestasi: Lomba X - Juara I Akademik` (approval
  * path). This builder indexes approved records by every keterangan variant
  * the backend can produce, so a history row resolves to its photo with an

@@ -30,7 +30,7 @@ Browser: Latest Chrome/Firefox/Edge
 
 2. **PostgreSQL** (v14 or higher)
    - Download (Windows): https://www.postgresql.org/download/windows/
-     (installer resmi EDB — sudah termasuk server + pgAdmin 4)
+     (installer resmi EDB - sudah termasuk server + pgAdmin 4)
    - macOS: https://www.postgresql.org/download/macosx/ atau `brew install postgresql`
    - Linux (Ubuntu/Debian): `sudo apt install postgresql postgresql-contrib`
    - Saat instalasi, catat password user `postgres` (dibutuhkan untuk .env)
@@ -103,7 +103,7 @@ cp .env.example .env      (Linux/Mac)
 ```
 
 ### Step 4: Setup Database
-**Cara mudah (otomatis) — cukup satu perintah** (jalankan setelah Step 3,
+**Cara mudah (otomatis) - cukup satu perintah** (jalankan setelah Step 3,
 karena `db:setup` membaca password dari file `.env`):
 ```bash
 cd backend
@@ -131,12 +131,12 @@ dan mengimpor seluruh tabel + data awal dari `database/skema.sql`.
 
 #### Panduan pgAdmin 4 di Windows (langkah demi langkah untuk pemula)
 
-pgAdmin 4 adalah aplikasi GUI bawaan installer PostgreSQL — fungsinya mirip
+pgAdmin 4 adalah aplikasi GUI bawaan installer PostgreSQL - fungsinya mirip
 phpMyAdmin, tapi berjalan sebagai aplikasi desktop + dibuka di browser.
 
 **1. Buka pgAdmin dan konek ke server lokal**
 1. Buka **pgAdmin 4** dari Start Menu (pertama kali dibuka, Anda diminta
-   membuat *master password* — ini password khusus aplikasi pgAdmin saja,
+   membuat *master password* - ini password khusus aplikasi pgAdmin saja,
    boleh beda dengan password database. Ingat password ini).
 2. Di panel kiri: buka **Servers → PostgreSQL 16** (angka versi menyesuaikan
    yang Anda install) → klik server tersebut.
@@ -158,13 +158,13 @@ phpMyAdmin, tapi berjalan sebagai aplikasi desktop + dibuka di browser.
    `backend/database/skema.sql` di folder project → **Select**.
 3. Klik tombol **Execute** (▶, atau tekan **F5**), tunggu sampai muncul
    pesan hijau *Query returned successfully*.
-4. Kalau ada error merah, baca pesannya — umumnya karena database
+4. Kalau ada error merah, baca pesannya - umumnya karena database
    `ipt_school` belum dipilih (pastikan dropdown database di Query Tool
    menunjukkan `ipt_school`, bukan `postgres`).
 
 **4. Verifikasi tabel sudah ada**
 1. Di panel kiri: **Databases → ipt_school → Schemas → public → Tables**.
-2. Klik kanan *Tables* → *Refresh* — Anda harus melihat tabel-tabel seperti
+2. Klik kanan *Tables* → *Refresh* - Anda harus melihat tabel-tabel seperti
    `users`, `prestasi`, `organisasi`, `event`, `pelanggaran`, `perilaku`,
    `ipt_config`, dll.
 

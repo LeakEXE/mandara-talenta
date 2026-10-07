@@ -1,4 +1,4 @@
-# k6 Load Testing — Mandara Talenta (Express :5000 + Postgres)
+# k6 Load Testing - Mandara Talenta (Express :5000 + Postgres)
 
 Read-only, k6-CLI-first. No Grafana required. Run later whenever ready.
 
@@ -19,13 +19,13 @@ k6 version
    (`must_change_credentials` must be false).
 4. Never use `ADMIN001`, never test `POST /forgot-password` (spams superadmin),
    never `POST` prestasi/organisasi/event/uploads (creates approval queue + files).
-5. Stop criteria — abort the run if any is true:
+5. Stop criteria - abort the run if any is true:
    `5xx > 1%` · `p95 dashboard/stats > 2s sustained` · real users complain.
 
 Rate-limit math (single k6 machine = single IP):
 `apiLimiter` 500 req/min ≈ 8.3 rps. 10 VUs with ~3s think-time ≈ 3 rps
 → expect some `429`. The script tracks these as `rate_limited`, not failures.
-If `rate_limited > 30%`, your IP budget is saturated — lower VUs or use staging.
+If `rate_limited > 30%`, your IP budget is saturated - lower VUs or use staging.
 
 ## 2. Configure (never commit passwords)
 
@@ -49,16 +49,16 @@ k6 run -e BASE_URL=%BASE_URL% -e USERNAME=%USERNAME% -e PASSWORD=%PASSWORD% k6/s
 ```
 
 Pass = `checks 100%`, `p95 < 2s`, login 200. If login is `400` → wrong creds
-(stop — 5 fails/15min locks the IP). If `403 mustChangeCredentials` → log in
+(stop 5 fails/15min locks the IP). If `403 mustChangeCredentials` → log in
 via browser once and complete setup-akun.
 
 ## 4. Run concurrent users
 
 ```bash
-# Staging / local — real capacity test:
+# Staging / local real capacity test:
 k6 run -e BASE_URL=%BASE_URL% -e USERNAME=%USERNAME% -e PASSWORD=%PASSWORD% -e MAX_VUS=20 k6/load-concurrent.js
 
-# Prod — keep gentle (5 VUs):
+# Prod keep gentle (5 VUs):
 k6 run -e BASE_URL=http://YOUR_PROD_IP:5000 -e USERNAME=%USERNAME% -e PASSWORD=%PASSWORD% -e MAX_VUS=5 k6/load-concurrent.js
 
 # With results files for later graphing:
@@ -74,7 +74,7 @@ Journey per iteration: `dashboard/stats` → `profile` → `search/students` →
 | Signal | Healthy | Action if bad |
 |---|---|---|
 | `checks` | > 95% | Look at which URL failed (401 = session, 5xx = server) |
-| `dashboard_stats_duration p95` | < 2000ms | Add index / cache — this is the 11-query aggregation |
+| `dashboard_stats_duration p95` | < 2000ms | Add index / cache this is the 11-query aggregation |
 | `search_duration p95` | < 1500ms | Check `ILIKE %..%` full scans on `users` |
 | `server_errors` | < 1% | Stop, check `logs/` + `SELECT * FROM activity_logs ORDER BY id DESC LIMIT 20` |
 | `rate_limited (429)` | < 30% | Expected under load from one IP; lower VUs or whitelist k6 IP |

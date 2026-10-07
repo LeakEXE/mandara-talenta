@@ -202,7 +202,7 @@ function KonfigurasiIPT() {
       // 1. Store grade defaults (used for newly created students)
       await api.put('/ipt-config/ipt-awal-per-grade', parsed);
       // 2. Apply to ALL current students server-side (grade buckets resolved
-      //    from every siswa row — never from a paginated frontend list)
+      //    from every siswa row never from a paginated frontend list)
       const { data } = await api.post('/users/bulk-update-ipt-awal', { grades: parsed });
       const parts = ['X', 'XI', 'XII'].map(
         (grade) => `Kelas ${grade} (${data?.applied?.[grade]?.updated ?? 0} siswa)`

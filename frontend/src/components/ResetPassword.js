@@ -233,7 +233,7 @@ function ResetPassword() {
       </div>
 
       <div className="card" style={{ marginBottom: '24px' }}>
-        <h3>Reset Langsung — Cari User</h3>
+        <h3>Reset Langsung - Cari User</h3>
         <div className="form-group">
           <input
             type="text"

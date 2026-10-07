@@ -178,7 +178,7 @@ function Dashboard() {
   };
 
   // Top-5 pembina comes from the dedicated leaderboard endpoint (fetched on
-  // mount/refresh only — it is a heavy aggregation, not 30s-poll material).
+  // mount/refresh only it is a heavy aggregation, not 30s-poll material).
   const fetchTopPembina = async () => {
     try {
       const res = await api.get('/search/leaderboard/category/pembina');
@@ -197,7 +197,7 @@ function Dashboard() {
 
   const topStudents = useMemo(() => stats?.top_ipt_students || [], [stats]);
   const top3 = useMemo(() => topStudents.slice(0, 3), [topStudents]);
-  const noticeText = (schoolConfig?.announcement ?? 'Selamat datang di Mandara Talenta — Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara').trim();
+  const noticeText = (schoolConfig?.announcement ?? 'Selamat datang di Mandara Talenta - Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara').trim();
 
   if (loading) {
     return (
@@ -262,7 +262,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* NOTICE — configurable via /school-config; hidden when cleared */}
+      {/* NOTICE configurable via /school-config; hidden when cleared */}
       {noticeText && (
       <div className="dash-notice" role="status">
         <div className="dash-notice-track">
@@ -599,7 +599,7 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                     {(!stats.pelanggaran_by_kelas || stats.pelanggaran_by_kelas.every((x) => Number(x.count) === 0)) && (
-                      <div className="chart-empty">Belum ada pelanggaran tercatat — kabar baik!</div>
+                      <div className="chart-empty">Belum ada pelanggaran tercatat - kabar baik!</div>
                     )}
                   </div>
                 </div>
@@ -618,7 +618,7 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                     {(!stats.pelanggaran_by_grha || stats.pelanggaran_by_grha.every((x) => Number(x.count) === 0)) && (
-                      <div className="chart-empty">Belum ada pelanggaran tercatat — kabar baik!</div>
+                      <div className="chart-empty">Belum ada pelanggaran tercatat - kabar baik!</div>
                     )}
                   </div>
                 </div>

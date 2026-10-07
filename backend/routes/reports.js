@@ -248,7 +248,7 @@ router.get('/ipt-card/:userId', auth, async (req, res) => {
             return res.status(400).json({ message: 'ID siswa tidak valid' });
         }
 
-        // NOTE: no wali-kelas gate here — every guru/pegawai may view any
+        // NOTE: no wali-kelas gate here every guru/pegawai may view any
         // student's card (read-only; same data the leaderboard exposes).
         // Print-scope endpoints below (/reports/students, /class-ipt/:kelas)
         // intentionally stay wali-kelas-restricted.

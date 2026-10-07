@@ -779,7 +779,7 @@ function InputPrestasi() {
                             {expanded ? '▾' : '▸'} Kelompok · {members.length} siswa
                           </button>
                         </td>
-                        <td>—</td>
+                        <td>-</td>
                         <td>{first.nama_lomba}</td>
                         <td>{formatDisplayText(first.jenis_lomba || 'akademik')}</td>
                         <td>Kelompok</td>
@@ -1029,7 +1029,7 @@ function InputPrestasi() {
         </div>
         
         <div className="form-group">
-          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleFileChange}
@@ -1191,7 +1191,7 @@ function InputPrestasi() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleEditFileChange}

@@ -44,7 +44,7 @@ function InputPelanggaran() {
       );
       return { value: config.field1, label: config.field1, level: config.field2, point: level?.point_value || 0 };
     });
-  // Options with level info (e.g. "mencuri (berat)") — shared by the dropdown
+  // Options with level info (e.g. "mencuri (berat)") - shared by the dropdown
   // list and the selected-value display of both add and edit forms.
   const jenisSelectOptions = jenisOptions.map((jenis) => ({
     value: jenis.value,
@@ -725,7 +725,7 @@ function InputPelanggaran() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleFileChange}
@@ -825,7 +825,7 @@ function InputPelanggaran() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleEditFileChange}

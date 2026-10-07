@@ -131,8 +131,8 @@ async function resolveStudentIdByNis(nis, fallbackUserId) {
 
 async function applyIptChange(userId, jenis, pointChange, keterangan, executor = null, recordRef = null) {
     // Recompute instead of adding: the record mutation (INSERT approved /
-    // status flip) must already be visible — via the caller's transaction
-    // when executor is given, else committed — so the new total always
+    // status flip) must already be visible via the caller's transaction
+    // when executor is given, else committed so the new total always
     // equals ipt_awal + approved records. Heals pre-existing drift and
     // makes double-apply harmless. `pointChange` is kept for signature
     // compatibility but no longer drives the math. `recordRef` links the
@@ -174,7 +174,7 @@ async function recomputeAndStoreIpt(userId, { jenis, keterangan, executor = null
 // Every keterangan text a record's lifecycle can leave in ipt_history:
 // grant (approve/direct wording), updates, legacy wordings, and old
 // delete-tombstones. Used to purge pre-linkage rows (record_type IS NULL)
-// when a record is deleted — exact strings only, never fuzzy matching.
+// when a record is deleted exact strings only, never fuzzy matching.
 const RECORD_LABEL_FIELD = {
     prestasi: 'nama_lomba',
     organisasi: 'jabatan_organisasi',
@@ -242,7 +242,7 @@ async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePeril
 
     // Only the latest approved perilaku counts (see buildIptCardBreakdown),
     // so recompute converges to the right total however many rows were
-    // superseded — no net-diff arithmetic needed.
+    // superseded no net-diff arithmetic needed.
     const stored = await recomputeAndStoreIpt(userId, {
         jenis: 'perilaku',
         keterangan,

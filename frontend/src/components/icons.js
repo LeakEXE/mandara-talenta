@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 // Single icon language for the app (lucide, stroke-based, currentColor).
-// Category icons — same six everywhere (Dashboard, Leaderboard,
+// Category icons same six everywhere (Dashboard, Leaderboard,
 // IzinAkun, KonfigurasiIPT, WaliKelas history).
 export const CATEGORY_ICONS = {
   prestasi: Trophy,
@@ -31,7 +31,7 @@ export function CategoryIcon({ name, size = 16, ...rest }) {
   return C ? <C size={size} {...rest} /> : null;
 }
 
-// Rank medals — gold / silver / bronze (replaces 🥇🥈🥉).
+// Rank medals gold / silver / bronze (replaces 🥇🥈🥉).
 const MEDAL_COLORS = { 1: '#f59e0b', 2: '#94a3b8', 3: '#cd7f32' };
 
 export function MedalIcon({ rank, size = 26, ...rest }) {

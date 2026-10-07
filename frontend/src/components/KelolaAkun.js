@@ -355,7 +355,7 @@ function KelolaAkun() {
         await api.put(`/users/${editStudent.id}/username`, { username: newUsername });
       }
       // Biodata edits apply directly, no approval needed (guru/pegawai may
-      // only touch siswa targets — enforced server-side too).
+      // only touch siswa targets enforced server-side too).
       await api.put(`/users/${editStudent.id}/biodata`, formData);
       setMessage(`Data ${editStudent.role === 'siswa' ? 'siswa' : 'guru'} berhasil diupdate!`);
       
@@ -373,7 +373,7 @@ function KelolaAkun() {
   };
 
   // NOTE: import type is passed explicitly as an argument (not via setState)
-  // because setState is async — calling setImportType() then handleExcelImport()
+  // because setState is async calling setImportType() then handleExcelImport()
   // in the same tick reads the STALE type and runs the wrong branch
   // (this was the bug: guru import ran the siswa validation).
   const handleExcelImport = async (type = importModalType) => {
@@ -683,7 +683,7 @@ function KelolaAkun() {
       await styleImportTemplateSheet(worksheet, {
         headerNotes: {
           Nama: 'Nama lengkap siswa sesuai data sekolah.',
-          NIS: 'Nomor Induk Siswa — unik, tidak boleh sama dengan siswa lain.',
+          NIS: 'Nomor Induk Siswa - unik, tidak boleh sama dengan siswa lain.',
           Jurusan: 'Pilih dari daftar: TKJ 1, TKJ 2, DPIB 1, DPIB 2, TKR 1, TKR 2.',
           Grha: 'Pilih grha siswa dari daftar yang tersedia.',
           TahunPelajaran: 'Tahun pelajaran siswa tersebut masuk sekolah. Format YYYY-YYYY, contoh: 2026-2027.',
@@ -739,7 +739,7 @@ function KelolaAkun() {
       await styleImportTemplateSheet(worksheet, {
         headerNotes: {
           Nama: 'Nama lengkap guru/pegawai sesuai data sekolah.',
-          NIP: 'Nomor Induk Pegawai — unik, tidak boleh sama dengan yang lain.',
+          NIP: 'Nomor Induk Pegawai - unik, tidak boleh sama dengan yang lain.',
           Jabatan: 'Pilih dari daftar: Guru, Pegawai.',
           NoHP: 'Nomor HP aktif, diawali 08 (contoh: 081234567890).',
           Password: 'Password awal akun (min. 6 karakter). User wajib menggantinya saat login pertama.'
@@ -1243,7 +1243,7 @@ function KelolaAkun() {
             )}
           </div>
         )}
-        {/* Pagination — visible to superadmin and guru */}
+        {/* Pagination visible to superadmin and guru */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
           ...(userRole !== 'superadmin' ? { borderTop: '1px solid #e0e0e0', paddingTop: '16px' } : {})
@@ -1317,7 +1317,7 @@ function KelolaAkun() {
         </div>
         {userRole === 'superadmin' && selectionRole && (
           <p style={{ fontSize: '13px', color: '#666', marginTop: '12px' }}>
-            Mode pilihan: <strong>{selectionRole === 'siswa' ? 'Siswa' : 'Guru & Pegawai'}</strong> — hanya role yang sama yang bisa dipilih.
+            Mode pilihan: <strong>{selectionRole === 'siswa' ? 'Siswa' : 'Guru & Pegawai'}</strong> - hanya role yang sama yang bisa dipilih.
           </p>
         )}
       </div>

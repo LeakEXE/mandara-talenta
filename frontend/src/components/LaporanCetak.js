@@ -200,7 +200,7 @@ export async function createClassIptExcelBuffer({ classStudents = [], schoolName
   // Kop (baris 1-10 dikosongkan untuk gambar: 2x raport individual,
   // maks 980x256px agar proporsional dengan tabel landscape).
   // Berbeda dengan raport individual yang sempit, leger landscape jauh lebih
-  // lebar dari gambar kop — gambar di-center di atas tabel. ExcelJS
+  // lebar dari gambar kop gambar di-center di atas tabel. ExcelJS
   // mendukung anchor kolom fraksional (lihat anchor.js: nativeCol +
   // nativeColOff), jadi offset kiri dihitung dalam satuan lebar kolom.
   if (kopImage) {
@@ -339,7 +339,7 @@ export async function createClassIptExcelBuffer({ classStudents = [], schoolName
   // ---- Freeze panes supaya header tetap kelihatan saat scroll ----
   sheet.views = [{ state: "frozen", ySplit: HEAD_ROW_2 }];
 
-  // ---- Proteksi tulis: dokumen resmi — seluruh sel terkunci,
+  // ---- Proteksi tulis: dokumen resmi seluruh sel terkunci,
   // pengguna hanya boleh menyeleksi (lihat/salin). Password sama
   // dengan kartu individual (lihat IPT_SHEET_PASSWORD).
   await sheet.protect(IPT_SHEET_PASSWORD, { selectLockedCells: true, selectUnlockedCells: true });
@@ -664,7 +664,7 @@ function LaporanCetak({ user }) {
                   onChange={(e) => setSelectedStudentId(e.target.value)}
                   disabled={!selectedClass}
                 >
-                  <option value="" disabled hidden>{selectedClass ? '— Pilih siswa —' : '— Pilih kelas dulu —'}</option>
+                  <option value="" disabled hidden>{selectedClass ? '- Pilih siswa -' : '- Pilih kelas dulu -'}</option>
                   {filteredStudents.map(s => (
                     <option key={s.id} value={s.id}>{s.nama} ({s.nis})</option>
                   ))}

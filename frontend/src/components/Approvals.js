@@ -231,7 +231,7 @@ function Approvals() {
         cleanPath = `/uploads/${uploadFolder}/${cleanPath}`;
       } else if (!cleanPath.startsWith('/')) {
         // Paths saved by the backend are already relative to the uploads root
-        // (e.g. "uploads/event/filename.jpg") — just root them, don't nest
+        // (e.g. "uploads/event/filename.jpg") just root them, don't nest
         // them under the fallback folder again.
         cleanPath = cleanPath.startsWith('uploads/')
           ? `/${cleanPath}`
@@ -1013,7 +1013,7 @@ function Approvals() {
             </h3>
             {selectedItem._groupSize > 1 && (
               <div className="alert alert-warning" style={{ marginBottom: '16px' }}>
-                Pengajuan kelompok — keputusan ini berlaku untuk {selectedItem._groupSize} siswa.
+                Pengajuan kelompok - keputusan ini berlaku untuk {selectedItem._groupSize} siswa.
               </div>
             )}
             <div style={{ marginBottom: '16px' }}>

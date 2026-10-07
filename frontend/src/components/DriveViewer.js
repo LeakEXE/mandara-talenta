@@ -338,7 +338,7 @@ function DriveViewer() {
                   min="0"
                   value={filters.maxSize}
                   onChange={(e) => handleFilterChange('maxSize', e.target.value)}
-                  placeholder="—"
+                  placeholder="-"
                   className="form-control"
                   style={{ width: '100%' }}
                 />
@@ -435,7 +435,7 @@ function DriveViewer() {
                         )}
                       </td>
                       <td style={{ padding: '12px', color: '#666' }}>
-                        {file.subfolder || '—'}
+                        {file.subfolder || '-'}
                         {file.referenced === false && (
                           <span style={{
                             display: 'inline-block', marginLeft: '6px', fontSize: '10.5px', fontWeight: '700',
@@ -471,7 +471,7 @@ function DriveViewer() {
             </div>
           )}
 
-          {/* Pagination — client-side, same pattern as IzinAkun */}
+          {/* Pagination client-side, same pattern as IzinAkun */}
           {!loading && filteredFiles.length > 0 && (
             <>
               <div style={{

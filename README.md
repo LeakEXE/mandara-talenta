@@ -124,14 +124,14 @@ Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) adalah sistem untu
 
 ### Prasyarat
 - Node.js (v14 atau lebih tinggi)
-- PostgreSQL (v14 atau lebih tinggi) — download: https://www.postgresql.org/download/
+- PostgreSQL (v14 atau lebih tinggi) - download: https://www.postgresql.org/download/
   (installer Windows EDB sudah termasuk pgAdmin 4; catat password user `postgres`)
 - npm atau yarn
 
 ### Langkah-langkah
 
 #### 1. Setup Database
-Cara otomatis (disarankan) — membuat database + mengimpor seluruh skema:
+Cara otomatis (disarankan) - membuat database + mengimpor seluruh skema:
 ```bash
 cd backend
 npm install
@@ -142,7 +142,7 @@ npm run db:setup
 (semua tabel + data awal IPT).
 
 Cara manual:
-1. Buat database baru bernama `ipt_school` — via pgAdmin
+1. Buat database baru bernama `ipt_school` - via pgAdmin
    (klik kanan *Databases* → *Create*) atau terminal: `createdb -U postgres ipt_school`
 2. Import file `backend/database/skema.sql` ke database `ipt_school`:
    `psql -U postgres -d ipt_school -f backend/database/skema.sql`
@@ -204,7 +204,7 @@ Aplikasi akan berjalan di `http://localhost:3000`
 > ⚠️ **PENTING**: Database baru berisi ADMIN001 dengan password placeholder,
 > jadi tidak bisa login dengan `admin123` sebelum setup. Isi
 > `SUPERADMIN_SETUP_PASSWORD` di `.env` (lihat `backend/.env.example`), login
-> dengan username `ADMIN001` + password tersebut — password otomatis di-hash
+> dengan username `ADMIN001` + password tersebut - password otomatis di-hash
 > saat login. Segera ganti password lewat menu Profile, lalu hapus variabel
 > itu dari `.env`.
 
@@ -426,7 +426,7 @@ Fitur yang dapat ditambahkan:
 
 ## License
 
-Proprietary — Copyright (C) 2026 Dean Putra & Agus Kariada. All rights reserved.
+Proprietary - Copyright (C) 2026 Dean Putra & Agus Kariada. All rights reserved.
 
 Penggunaan perangkat lunak ini terbatas untuk SMK Negeri Bali Mandara.
 Dilarang menyalin, menyebarluaskan, atau menggunakan kembali perangkat lunak ini

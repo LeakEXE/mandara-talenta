@@ -21,7 +21,7 @@ const INK = 'FF000000';
 export const IPT_SHEET_PASSWORD = 'balimandara-ipt';
 
 // Opsi proteksi: seluruh sel terkunci (anti-edit), pengguna hanya boleh
-// menyeleksi (lihat/salin) — seleksi tidak mengubah isi & tidak merusak cetak.
+// menyeleksi (lihat/salin) seleksi tidak mengubah isi & tidak merusak cetak.
 const IPT_SHEET_PROTECT_OPTIONS = { selectLockedCells: true, selectUnlockedCells: true };
 
 // Lebar kolom A..L (satuan Excel) sesuai dokumen asli
@@ -31,7 +31,7 @@ const F_TITLE = { name: TNR, size: 12, bold: true };
 const F_TEXT = { name: TNR, size: 11 };
 const F_BOLD = { name: TNR, size: 11, bold: true };
 const F_SIGN = { name: TNR, size: 11, bold: true, underline: true };
-// Merah untuk baris Pelanggaran (point negatif) — sama dengan warna merah
+// Merah untuk baris Pelanggaran (point negatif) sama dengan warna merah
 // nilai negatif pada leger kelas (LaporanCetak).
 const F_BOLD_RED = { name: TNR, size: 11, bold: true, color: { argb: 'FFC00000' } };
 
@@ -46,7 +46,7 @@ const MERGES = [
   'A17:C17', 'E17:H17', 'I17:K17',
   'A19:G19', 'H19:K19',
   'B20:G20', 'H20:K20',
-  // II Prestasi: A21 ("II") TIDAK di-merge — dinormalkan seperti kolom A lain.
+  // II Prestasi: A21 ("II") TIDAK di-merge dinormalkan seperti kolom A lain.
   // Header + 2 baris rincian (Akademik, Non-akademik).
   'A21:A23', 'B21:G21', 'H21:K21',
   'C22:G22', 'H22:K22', 'C23:G23', 'H23:K23',
@@ -74,7 +74,7 @@ function setCell(sheet, addr, value, { font, alignment } = {}) {
 }
 
 // Grid tabel A19:K{totalRow}: garis horizontal medium, vertikal tipis di dalam,
-// medium di tepi luar — sesuai dokumen asli.
+// medium di tepi luar sesuai dokumen asli.
 function styleTableGrid(sheet, totalRow = 37) {
   const thin = { style: 'thin', color: { argb: INK } };
   const medium = { style: 'medium', color: { argb: INK } };
@@ -157,7 +157,7 @@ export function calcIndividualPoints(points = {}) {
   const pelanggaranSedang = num(points.pelanggaran_sedang);
   const pelanggaranBerat = num(points.pelanggaran_berat);
   const pelanggaranLainnya = num(points.pelanggaran_lainnya);
-  // Pelanggaran disimpan negatif (pengurangan) — sama seperti users.ipt_total —
+  // Pelanggaran disimpan negatif (pengurangan) sama seperti users.ipt_total
   // jadi total di sini cukup penjumlahan biasa, bukan pengurangan.
   const total =
     pointAwal +
@@ -191,7 +191,7 @@ export async function createIndividualIptExcelBuffer({
 }) {
   const p = calcIndividualPoints(points);
   const total = iptTotal ?? p.total;
-  // Total di bawah batas minimum diketak merah — hanya nilai Total (kolom H),
+  // Total di bawah batas minimum diketak merah hanya nilai Total (kolom H),
   // label "TOTAL POINT IPT" tetap hitam.
   const totalBelowMin = Number(minIpt) > 0 && Number(total) < Number(minIpt);
 
@@ -332,7 +332,7 @@ export async function createIndividualIptExcelBuffer({
   setCell(sheet, `B${rVII}`, 'Pelanggaran', { font: F_BOLD, alignment: A_CENTER });
 
   // Satu baris per tingkat (sudah diurutkan; nilai negatif = pengurangan)
-  // — hanya nilai Point (kolom H) yang dicetak merah.
+  // hanya nilai Point (kolom H) yang dicetak merah.
   langgarRows.forEach(([label, val], i) => {
     const r = rVII + 1 + i;
     setCell(sheet, `B${r}`, i + 1, { font: F_TEXT, alignment: A_CENTER });
@@ -385,7 +385,7 @@ export async function createIndividualIptExcelBuffer({
     }
   }
 
-  // Proteksi tulis: dokumen resmi — kunci sebelum tulis buffer.
+  // Proteksi tulis: dokumen resmi kunci sebelum tulis buffer.
   await sheet.protect(IPT_SHEET_PASSWORD, IPT_SHEET_PROTECT_OPTIONS);
 
   return workbook.xlsx.writeBuffer();

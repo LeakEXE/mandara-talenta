@@ -116,7 +116,7 @@ const sanitizeInput = (req, res, next) => {
 };
 
 // Security headers configuration.
-// NOTE: `useDefaults: false` is critical while serving plain HTTP — otherwise
+// NOTE: `useDefaults: false` is critical while serving plain HTTP otherwise
 // Helmet merges in `upgrade-insecure-requests`, which makes browsers rewrite
 // every subresource (JS/CSS/favicon/API) from http:// to https:// and the
 // whole app fails to load on an HTTP-only origin. Re-enable the defaults
@@ -137,7 +137,7 @@ const securityHeaders = helmet({
       mediaSrc: ["'self'"],
       // Allow blob: so client-generated PDF previews (URL.createObjectURL)
       // can render in <iframe>. frameAncestors is 'self' (not 'none') so our
-      // own EvidenceViewer iframes may embed /uploads PDFs — external sites
+      // own EvidenceViewer iframes may embed /uploads PDFs external sites
       // still cannot frame this app (clickjacking protection intact).
       frameSrc: ["'self'", "blob:"],
       frameAncestors: ["'self'"],

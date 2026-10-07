@@ -13,7 +13,7 @@ function Logs() {
     totalPages: 0
   });
 
-  // Page/limit always passed explicitly — stable identity, no stale closures.
+  // Page/limit always passed explicitly stable identity, no stale closures.
   const fetchLogs = useCallback(async (page = 1, limit = DEFAULT_LIMIT) => {
     try {
       setLoading(true);
@@ -97,7 +97,7 @@ function Logs() {
           <p style={{ textAlign: 'center', padding: '24px', color: '#999' }}>Belum ada activity logs.</p>
         )}
 
-        {/* Pagination — same pattern as KelolaAkun */}
+        {/* Pagination same pattern as KelolaAkun */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
           borderTop: '1px solid #e0e0e0', paddingTop: '16px', marginTop: '16px'

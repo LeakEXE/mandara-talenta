@@ -42,7 +42,7 @@ router.get('/user/:userId', auth, async (req, res) => {
     }
 });
 
-// Create perilaku — always applies directly, no approval queue.
+// Create perilaku always applies directly, no approval queue.
 // Whoever holds input access submits an approved row and the student's
 // IPT is updated immediately via the standard supersede semantics.
 router.post('/', auth, checkPermission('perilaku'), async (req, res) => {
@@ -173,7 +173,7 @@ router.put('/:id', auth, async (req, res) => {
 
             // Approved records feed the total: recompute it (same formula as
             // syncIpt.js). Only the latest approved perilaku counts, so
-            // editing a non-latest one correctly changes nothing — the old
+            // editing a non-latest one correctly changes nothing the old
             // diff arithmetic got that case wrong.
             if (perilakuData.status === 'approved') {
                 await recomputeAndStoreIpt(perilakuData.user_id, {
@@ -193,7 +193,7 @@ router.put('/:id', auth, async (req, res) => {
             conn.release();
         }
 
-        // Log activity (after commit — logActivity writes via the pool and
+        // Log activity (after commit logActivity writes via the pool and
         // swallows its own errors, so it must never run inside the txn).
         await logActivity(req.user.id, 'UPDATE_PERILAKU', `User ${req.user.nama} (${req.user.role}) updated perilaku ID ${perilakuId}`, req.ip);
 
@@ -244,7 +244,7 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Log activity (after commit — logActivity writes via the pool and
+        // Log activity (after commit logActivity writes via the pool and
         // swallows its own errors, so it must never run inside the txn).
         await logActivity(req.user.id, 'DELETE_PERILAKU', `SuperAdmin ${req.user.nama} deleted perilaku for ${perilakuData.nama} (${perilakuData.nis}): ${perilakuData.karakter_siswa}`, req.ip);
 

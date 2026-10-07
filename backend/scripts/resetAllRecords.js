@@ -1,5 +1,5 @@
 // Full data reset: wipes every IPT record, approval queue, log and
-// notification, plus their evidence files — everything EXCEPT users,
+// notification, plus their evidence files everything EXCEPT users,
 // permissions, wali-kelas assignments and all configurations (IPT points,
 // school, access).
 // Student totals are reset to their ipt_awal (otherwise phantom points
@@ -130,7 +130,7 @@ async function main(argv) {
 
     const counts = await tableCounts(db.query);
     const totalRows = Object.values(counts).reduce((a, b) => a + b, 0);
-    console.log(`Record/log/notification rows to wipe: ${totalRows}${apply ? '' : ' (preview — pass --yes to apply)'}`);
+    console.log(`Record/log/notification rows to wipe: ${totalRows}${apply ? '' : ' (preview - pass --yes to apply)'}`);
     for (const table of WIPE_TABLES) {
         console.log(`  ${table}: ${counts[table]}`);
     }
@@ -148,7 +148,7 @@ async function main(argv) {
     console.log(`User accounts kept: ${userRows[0]?.total || 0} (ipt_total reset to ipt_awal)`);
 
     if (!apply) {
-        console.log('Dry run — nothing was touched. Re-run with --yes to apply.');
+        console.log('Dry run - nothing was touched. Re-run with --yes to apply.');
         return { applied: false };
     }
 
@@ -178,7 +178,7 @@ async function main(argv) {
     }
     console.log('Database reset committed.');
 
-    // Filesystem has no rollback — runs only after the DB commit succeeded.
+    // Filesystem has no rollback runs only after the DB commit succeeded.
     let removedFiles = 0;
     for (const folder of EVIDENCE_FOLDERS) {
         // eslint-disable-next-line no-await-in-loop

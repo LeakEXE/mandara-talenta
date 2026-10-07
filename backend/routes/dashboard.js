@@ -43,7 +43,7 @@ router.get('/stats', auth, async (req, res) => {
                 ORDER BY kelas
             `),
 
-            // Prestasi count (single category — no more akademik/nonakademik split)
+            // Prestasi count (single category no more akademik/nonakademik split)
             db.query(`
                 SELECT COUNT(*) as total
                 FROM prestasi

@@ -18,7 +18,7 @@ html, body {
 
 /* ================= KOP SURAT ================= */
 /* Kop surat = 1 file gambar utuh (logo kiri, teks tengah, logo kanan sudah jadi satu).
-   Rasio asli file kop-surat.jpg sekitar 3:1 (lebar:tinggi) — width 100% + height auto
+   Rasio asli file kop-surat.jpg sekitar 3:1 (lebar:tinggi) width 100% + height auto
    supaya proporsi tetap terjaga dan tidak gepeng/melar di kertas A4 landscape. */
 .kop-image {
   display: block;

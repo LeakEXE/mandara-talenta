@@ -676,7 +676,7 @@ function WaliKelas() {
         </div>
       )}
 
-      {/* DETAIL SISWA MODAL — shared StudentDetail component */}
+      {/* DETAIL SISWA MODAL shared StudentDetail component */}
       {showStudentDetail && selectedStudent && (
         <StudentDetail student={selectedStudent} onClose={() => setShowStudentDetail(false)} />
       )}

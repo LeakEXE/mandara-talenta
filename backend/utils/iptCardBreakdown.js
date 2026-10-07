@@ -35,7 +35,7 @@ function createEmptyPoints(iptAwal = 80) {
         pelanggaran_berat: 0,
         pelanggaran_lainnya: 0,
         // Semua tingkat pelanggaran untuk cetakan individual:
-        // [{ id, name, point_value, total }] — total bertanda (negatif = pengurangan).
+        // [{ id, name, point_value, total }] total bertanda (negatif = pengurangan).
         pelanggaran_levels: []
     };
 }
@@ -64,7 +64,7 @@ async function addPerilakuPoints(points, karakterSiswa) {
         return;
     }
 
-    // Legacy single-rating string — apply to tanggung_jawab as before
+    // Legacy single-rating string apply to tanggung_jawab as before
     const point = await lookupPerilakuPoint('tanggung_jawab', text);
     points.tanggung_jawab += point || PERILAKU_POINTS[text.toLowerCase()] || 0;
 }
@@ -83,7 +83,7 @@ function calculateBreakdownTotal(points) {
     total += points.kepanitiaan || 0;
     total += points.event || 0;
     // Pelanggaran disimpan sebagai point negatif (pengurangan), sama seperti
-    // yang diterapkan applyIptChange ke users.ipt_total — jadi cukup dijumlahkan.
+    // yang diterapkan applyIptChange ke users.ipt_total jadi cukup dijumlahkan.
     total += points.pelanggaran_ringan || 0;
     total += points.pelanggaran_sedang || 0;
     total += points.pelanggaran_berat || 0;
@@ -95,7 +95,7 @@ async function buildIptCardBreakdown(userId, cutoff = null, queryFn = null) {
     // Optional query executor (e.g. a transaction connection's query fn).
     // Record reads go through it so callers inside a transaction observe
     // their own uncommitted writes; config lookups (ipt_config, levels)
-    // stay on the pool via lookupPerilakuPoint — those tables are never
+    // stay on the pool via lookupPerilakuPoint those tables are never
     // mutated inside such a transaction. Defaults to the pool.
     const q = queryFn || db.query;
     const [students] = await q(
@@ -177,7 +177,7 @@ async function buildIptCardBreakdown(userId, cutoff = null, queryFn = null) {
         const level = row.level_id != null ? levelById.get(row.level_id) : null;
 
         if (!level) {
-            // Detail/tingkat sudah dihapus — tetap dihitung sebagai "lainnya".
+            // Detail/tingkat sudah dihapus tetap dihitung sebagai "lainnya".
             unresolved += delta;
             points.pelanggaran_lainnya += delta;
             return;

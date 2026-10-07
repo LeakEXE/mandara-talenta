@@ -739,7 +739,7 @@ function InputKepanitiaan() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input type="file" onChange={handleFileChange} accept="image/*,.pdf" />
         </div>
         <button type="submit" className="btn btn-primary" disabled={loading}>
@@ -826,7 +826,7 @@ function InputKepanitiaan() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleEditFileChange}

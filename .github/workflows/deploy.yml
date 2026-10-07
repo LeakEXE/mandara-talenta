@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    # NOTE: the runner OS is irrelevant — the command below runs on the
+    # NOTE: the runner OS is irrelevant the command below runs on the
     # Windows Server over SSH (OpenSSH default shell = cmd.exe, NOT bash/PowerShell).
     runs-on: ubuntu-latest
     steps:

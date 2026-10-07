@@ -439,7 +439,7 @@ router.post('/admin/bulk', auth, superAdminOnly, async (req, res) => {
                 );
             } else {
                 // New row: selected jenis as given, everything else defaults to true
-                // — except guru-only types for students, which default to false
+                // except guru-only types for students, which default to false
                 const values = {};
                 for (const j of validJenis) {
                     const otherIsGuruOnly = j === 'pelanggaran' || j === 'perilaku';

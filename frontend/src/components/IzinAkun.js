@@ -320,10 +320,10 @@ function IzinAkun() {
     }
 
     // Guru-only permissions can never be granted to students, so a mixed
-    // selection (guru + siswa) cannot use the enable buttons at all —
+    // selection (guru + siswa) cannot use the enable buttons at all
     // deselect the siswa first. The backend enforces the same rule.
     if (enable && GURU_ONLY_KEYS.includes(jenis) && !onlyGuruSelected) {
-      setMessage('⚠️ Pelanggaran & Perilaku hanya dapat diaktifkan untuk guru saja — hapus siswa dari pilihan Anda terlebih dahulu');
+      setMessage('⚠️ Pelanggaran & Perilaku hanya dapat diaktifkan untuk guru saja - hapus siswa dari pilihan Anda terlebih dahulu');
       setTimeout(() => setMessage(''), 4000);
       return;
     }
@@ -339,7 +339,7 @@ function IzinAkun() {
       });
 
       const skippedSiswa = response.data.skipped_siswa_count || 0;
-      const skipNote = skippedSiswa > 0 ? ` (${skippedSiswa} siswa dilewati — khusus guru)` : '';
+      const skipNote = skippedSiswa > 0 ? ` (${skippedSiswa} siswa dilewati - khusus guru)` : '';
       setMessage(`✅ ${jenisLabel} ${enable ? 'diaktifkan' : 'dimatikan'} untuk ${response.data.success_count} user terpilih!${skipNote}`);
       await fetchUsers(); // Refresh user list (also clears selection)
       setTimeout(() => setMessage(''), 3000);
@@ -696,7 +696,7 @@ function IzinAkun() {
                 Kontrol Individual
               </div>
               <p className="main-card-sub">
-                Centang user pada tabel di bawah, lalu gunakan tombol bulk update — hanya user yang dicentang yang akan diupdate.
+                Centang user pada tabel di bawah, lalu gunakan tombol bulk update - hanya user yang dicentang yang akan diupdate.
               </p>
             </div>
 
@@ -715,7 +715,7 @@ function IzinAkun() {
                           className="chip-btn on"
                           onClick={() => handleBulkSelectedUpdate(key, true)}
                           disabled={enableDisabled}
-                          title={enableBlocked(true) ? 'Hanya untuk pilihan berisi guru saja — hapus siswa dari pilihan' : undefined}
+                          title={enableBlocked(true) ? 'Hanya untuk pilihan berisi guru saja - hapus siswa dari pilihan' : undefined}
                           style={{ opacity: enableDisabled ? 0.6 : 1, cursor: enableDisabled ? 'not-allowed' : 'pointer' }}
                         >
                           <span className="ic">✓</span>
@@ -807,7 +807,7 @@ function IzinAkun() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: '13px', color: '#666' }}>
             <strong>{selectedUserIds.size} user dipilih</strong>
             {selectedUserIds.size > 0 && selectionRole && (
-              <span>Mode pilihan: <strong>{selectionRole === 'siswa' ? 'Siswa' : 'Guru'}</strong> — hanya role yang sama yang bisa dipilih.</span>
+              <span>Mode pilihan: <strong>{selectionRole === 'siswa' ? 'Siswa' : 'Guru'}</strong> - hanya role yang sama yang bisa dipilih.</span>
             )}
             <button className="btn btn-outline btn-sm" onClick={handleSelectAllVisible}>
               Pilih semua di halaman ini ({pagedUsers.filter(isUserSelectable).length})
@@ -879,7 +879,7 @@ function IzinAkun() {
                             onChange={() => handleToggleSelect(user)}
                           />
                         ) : (
-                          <span style={{ color: '#999' }}>—</span>
+                          <span style={{ color: '#999' }}>-</span>
                         )}
                       </td>
                       <td className="user-cell">
@@ -924,14 +924,14 @@ function IzinAkun() {
                               {user.can_input_event ? '✓' : '✕'}
                             </button>
                           </td>
-                          <td style={{ color: '#94a3b8' }}>—</td>
-                          <td style={{ color: '#94a3b8' }}>—</td>
-                          <td style={{ color: '#94a3b8' }} title="Siswa tidak dapat memiliki Izin Approval">—</td>
+                          <td style={{ color: '#94a3b8' }}>-</td>
+                          <td style={{ color: '#94a3b8' }}>-</td>
+                          <td style={{ color: '#94a3b8' }} title="Siswa tidak dapat memiliki Izin Approval">-</td>
                         </>
                       ) : user.role === 'superadmin' ? (
                         <>
                           {jenisInputs.map(({ key }) => (
-                            <td key={key} style={{ color: '#94a3b8' }}>—</td>
+                            <td key={key} style={{ color: '#94a3b8' }}>-</td>
                           ))}
                           <td>
                             <span className="toggle-cell on" title="Superadmin selalu dapat menyetujui">✓</span>
@@ -957,7 +957,7 @@ function IzinAkun() {
                           <button
                             onClick={() => openScopeModal(user)}
                             className={`toggle-cell ${(user.approval_scopes?.length || 0) > 0 ? 'on' : 'off'}`}
-                            title={`Izin menyetujui: ${(user.approval_scopes || []).join(', ') || 'tidak ada'} — klik untuk atur`}
+                            title={`Izin menyetujui: ${(user.approval_scopes || []).join(', ') || 'tidak ada'} - klik untuk atur`}
                           >
                             {(user.approval_scopes?.length || 0) > 0 ? `${user.approval_scopes.length}/5` : '✕'}
                           </button>
@@ -977,7 +977,7 @@ function IzinAkun() {
             )}
           </div>
 
-          {/* Pagination — same pattern as /kelola-akun (client-side slice) */}
+          {/* Pagination same pattern as /kelola-akun (client-side slice) */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
             borderTop: '1px solid #e0e0e0', paddingTop: '16px', marginTop: '16px'
@@ -1062,7 +1062,7 @@ function IzinAkun() {
               zIndex: 1500
             }}>
               <div className="card" style={{ width: 420, maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
-                <h4 style={{ marginTop: 0 }}>Izin Approval — {scopeModalUser.nama}</h4>
+                <h4 style={{ marginTop: 0 }}>Izin Approval - {scopeModalUser.nama}</h4>
                 <button className="btn btn-danger" onClick={() => setScopeModalUser(null)} style={{ marginBottom: '10px' }}>Tutup</button>
                 <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
                   Pilih jenis pengajuan yang boleh disetujui. Kosongkan semua untuk mencabut izin approval.

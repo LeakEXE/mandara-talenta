@@ -71,7 +71,7 @@ async function getApprovalRecipients(jenis, context = {}) {
 
     let scoped = await holdersOf(related);
     if (scoped.length === 0) {
-        // Safety net: nobody related holds the scope — notify all holders
+        // Safety net: nobody related holds the scope notify all holders
         // of the jenis so the submission never sits unhandled.
         const [all] = await db.query(`SELECT user_id AS id FROM approval_scopes WHERE jenis = ?`, [jenis]);
         scoped = all;
@@ -191,7 +191,7 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
             members.push(studentData[0]);
         }
 
-        // Move photo once (shared evidence for all members) — but ONLY for
+        // Move photo once (shared evidence for all members) but ONLY for
         // direct-add rows, which are approved immediately. Queued submissions
         // keep the type-folder path; PUT /superadmin/:type/:id moves it on
         // approval (like the other four types already do).
@@ -693,9 +693,9 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
 
         console.log(`SuperAdmin ${status} request: type=${type}, id=${id}`);
 
-        // Perilaku no longer goes through approval — submissions apply directly.
+        // Perilaku no longer goes through approval submissions apply directly.
         if (type === 'perilaku') {
-            return res.status(400).json({ message: 'Perilaku tidak lagi memerlukan persetujuan — langsung tersimpan saat diinput' });
+            return res.status(400).json({ message: 'Perilaku tidak lagi memerlukan persetujuan langsung tersimpan saat diinput' });
         }
 
         if (type === 'pelanggaran') {
@@ -751,7 +751,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
 
         // Kelompok prestasi: one decision covers the whole group. Collect
         // still-pending sibling rows sharing this grup_lomba (each keeps its
-        // own row, IPT entry, and notification — full points per member).
+        // own row, IPT entry, and notification full points per member).
         let targetRows = [data];
         if (type === 'prestasi' && data.grup_lomba) {
             const [siblings] = await db.query(
@@ -869,7 +869,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             );
 
             // Conditional staging flip: 0 rows means a concurrent decision
-            // already processed this row — abort the whole decision.
+            // already processed this row abort the whole decision.
             const marked = await approveSubmission(table, row.id, notes || 'Disetujui oleh SuperAdmin', conn.query);
             if (!marked) {
                 await conn.rollback();
@@ -897,7 +897,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             }
 
             // Delete the evidence file when no other row references it anymore
-            // (kelompok siblings share one file — never strand them).
+            // (kelompok siblings share one file never strand them).
             // Deferred until after commit: the check must read committed state.
             const fotoVal = data.foto ?? data.foto_path;
             if (fotoVal) {
@@ -985,7 +985,7 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
                         data.user_id,
                         'pelanggaran',
                         // point_dikurangi sudah negatif (hasil calculatePelanggaranPoints),
-                        // jadi langsung dijumlahkan — tanpa tanda minus.
+                        // jadi langsung dijumlahkan tanpa tanda minus.
                         data.point_dikurangi,
                         `Pelanggaran: ${data.jenis_pelanggaran}`,
                         conn.query,

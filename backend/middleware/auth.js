@@ -45,7 +45,7 @@ const CREDENTIAL_SETUP_PATHS = new Set([
 ]);
 
 // Paths reachable without any session at all (the login page fetches these
-// before the user authenticates — e.g. school branding for the logo).
+// before the user authenticates e.g. school branding for the logo).
 const PUBLIC_PATHS = new Set([
     '/api/school-config/public',
     '/api/auth/forgot-password'
@@ -230,7 +230,7 @@ const checkInputAccess = (jenisInput) => {
       }
       
       // Students never get access to pelanggaran/perilaku (guru-only input),
-      // mirroring checkPermission above — regardless of any stored permission flags.
+      // mirroring checkPermission above regardless of any stored permission flags.
       if (userRole === 'siswa' && (jenisInput === 'pelanggaran' || jenisInput === 'perilaku')) {
         return res.status(403).json({ 
           message: `Anda tidak memiliki izin untuk input data ${jenisInput}. Silakan hubungi SuperAdmin.` 

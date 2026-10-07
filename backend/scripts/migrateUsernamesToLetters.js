@@ -5,7 +5,7 @@
 // What it does:
 // - By default finds every users row whose username is missing or NOT
 //   letter-only (anything failing /^[A-Za-z]{5,20}$/: contains digits/symbols,
-//   too short/long). Already letter-only usernames are left untouched —
+//   too short/long). Already letter-only usernames are left untouched -
 //   unless --all is passed (see below).
 // - Generates the clean username from `nama` via generateUsername() (same
 //   generator used for new accounts: no random suffix; duplicates get a
@@ -97,7 +97,7 @@ function csvEscape(value) {
         }
 
         if (DRY_RUN) {
-            console.log('Dry run — no rows were updated. Re-run without --dry-run to apply.');
+            console.log('Dry run - no rows were updated. Re-run without --dry-run to apply.');
         } else {
             console.log(`Done. Migrated ${mappings.length} username(s) to letter-only.`);
             if (mappings.length > 0 && !FORCE_SETUP) {

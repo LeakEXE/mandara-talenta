@@ -1,5 +1,5 @@
 /**
- * Branding for Individual Point Talent (IPT) print — uses school config dynamically.
+ * Branding for Individual Point Talent (IPT) print - uses school config dynamically.
  * Values mirror the reference PDF (Hasil_Cetak_IPT.pdf).
  */
 export const getIptPrintBranding = (schoolConfig = {}) => {
