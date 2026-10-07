@@ -279,7 +279,7 @@ router.post('/change-password', auth, async (req, res) => {
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
         // Update password and clear the first-login flag (username may
-        // have been changed already on the setup screen — that is optional)
+        // have been changed already on the setup screen - that is optional)
         await db.query('UPDATE users SET password = ?, must_change_credentials = FALSE WHERE id = ?', [hashedPassword, req.user.id]);
 
         // Log activity

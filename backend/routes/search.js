@@ -99,7 +99,7 @@ router.get('/student/:userId', auth, async (req, res) => {
     }
 });
 
-// IPT category leaderboards (Top 20) — ranked by approved IPT points.
+// IPT category leaderboards (Top 20) ranked by approved IPT points.
 // Pelanggaran stores deductions as negative points, so it ranks most-negative first.
 const LEADERBOARD_CATEGORIES = {
     prestasi: { table: 'prestasi', pointCol: 'point' },
@@ -111,10 +111,10 @@ const LEADERBOARD_CATEGORIES = {
     pembina: { table: 'pembina', special: true } // Special case for pembina leaderboard
 };
 
-// Get leaderboard for one IPT category — GET /search/leaderboard/category/:category
+// Get leaderboard for one IPT category GET /search/leaderboard/category/:category
 router.get('/leaderboard/category/:category', auth, async (req, res) => {
     try {
-        // Whitelisted map only — no raw user input reaches the SQL
+        // Whitelisted map only no raw user input reaches the SQL
         const config = LEADERBOARD_CATEGORIES[req.params.category];
         if (!config) {
             return res.status(400).json({ message: 'Kategori tidak valid' });
@@ -125,7 +125,7 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
         // Kelompok lomba counts exactly ONCE per group: rows linked by
         // grup_lomba collapse to a single contribution; legacy rows without
         // a group id fall back to matching (nama_lomba, juara, kategori).
-        // Individu rows (and legacy NULLs) sum normally — every member keeps
+        // Individu rows (and legacy NULLs) sum normally every member keeps
         // full personal IPT; only the pembina total counts the group once.
         // Pembina is joined by id (name match only as legacy fallback).
         if (config.special) {
@@ -215,7 +215,7 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
     }
 });
 
-// Approved prestasi mentored by one pembina (any authenticated user — same
+// Approved prestasi mentored by one pembina (any authenticated user same
 // exposure level as the pembina leaderboard itself). Attribution mirrors the
 // leaderboard: pembina_id match, with legacy name-match fallback.
 router.get('/leaderboard/pembina/:pembinaId/records', auth, async (req, res) => {

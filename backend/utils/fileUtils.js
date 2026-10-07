@@ -218,7 +218,7 @@ async function collectFotoReferences(db, exclude = null) {
 /**
  * Is a file (listing path like '/uploads/approved/prestasi/f.jpg', a DB-style
  * 'uploads/...' value, or a bare filename) still referenced by any DB row?
- * Basename fallback errs toward "referenced" — never strand a live file over
+ * Basename fallback errs toward "referenced" never strand a live file over
  * a naming collision; true orphans surface in file-manager instead.
  */
 function isFotoReferenced(refs, filePath) {
@@ -230,7 +230,7 @@ function isFotoReferenced(refs, filePath) {
 
 /**
  * Delete the physical file only when no DB row references it anymore.
- * Group siblings often share one evidence file — this is what keeps a reject
+ * Group siblings often share one evidence file this is what keeps a reject
  * or record-delete from pulling it out from under the others.
  * @param {object} db - db wrapper (or transaction conn)
  * @param {string} storedValue - the foto value from the row being rejected/deleted

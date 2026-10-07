@@ -178,7 +178,7 @@ function Dashboard() {
   };
 
   // Top-5 pembina comes from the dedicated leaderboard endpoint (fetched on
-  // mount/refresh only — it is a heavy aggregation, not 30s-poll material).
+  // mount/refresh only it is a heavy aggregation, not 30s-poll material).
   const fetchTopPembina = async () => {
     try {
       const res = await api.get('/search/leaderboard/category/pembina');
@@ -197,7 +197,7 @@ function Dashboard() {
 
   const topStudents = useMemo(() => stats?.top_ipt_students || [], [stats]);
   const top3 = useMemo(() => topStudents.slice(0, 3), [topStudents]);
-  const noticeText = (schoolConfig?.announcement ?? 'Selamat datang di Mandara Talenta — Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara').trim();
+  const noticeText = (schoolConfig?.announcement ?? 'Selamat datang di Mandara Talenta - Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) SMK Negeri Bali Mandara').trim();
 
   if (loading) {
     return (
@@ -262,7 +262,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* NOTICE — configurable via /school-config; hidden when cleared */}
+      {/* NOTICE configurable via /school-config; hidden when cleared */}
       {noticeText && (
       <div className="dash-notice" role="status">
         <div className="dash-notice-track">
@@ -344,7 +344,7 @@ function Dashboard() {
           <div className="kpi-grid">
             {[
               { label: 'Total Siswa', value: stats.total_students || 0, sub: 'Siswa aktif terdaftar', icon: Users, mod: 'is-blue' },
-              { label: 'Total Guru', value: stats.total_teachers || 0, sub: 'Guru terdaftar', icon: GraduationCap, mod: 'is-teal' },
+              { label: 'Total Guru & Pegawai', value: stats.total_teachers || 0, sub: 'Guru dan pegawai terdaftar', icon: GraduationCap, mod: 'is-teal' },
               { label: 'Rata-rata IPT', value: stats.ipt_stats?.rata_rata || 0, sub: 'Rata-rata seluruh siswa', icon: BarChart3, mod: 'is-green' },
               { label: 'IPT Tertinggi', value: stats.ipt_stats?.tertinggi || 0, sub: 'Poin tertinggi', icon: Trophy, mod: 'is-amber' }
             ].map((k) => (
@@ -599,7 +599,7 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                     {(!stats.pelanggaran_by_kelas || stats.pelanggaran_by_kelas.every((x) => Number(x.count) === 0)) && (
-                      <div className="chart-empty">Belum ada pelanggaran tercatat — kabar baik!</div>
+                      <div className="chart-empty">Belum ada pelanggaran tercatat - kabar baik!</div>
                     )}
                   </div>
                 </div>
@@ -618,7 +618,7 @@ function Dashboard() {
                       </BarChart>
                     </ResponsiveContainer>
                     {(!stats.pelanggaran_by_grha || stats.pelanggaran_by_grha.every((x) => Number(x.count) === 0)) && (
-                      <div className="chart-empty">Belum ada pelanggaran tercatat — kabar baik!</div>
+                      <div className="chart-empty">Belum ada pelanggaran tercatat - kabar baik!</div>
                     )}
                   </div>
                 </div>

@@ -93,7 +93,7 @@ function FirstLoginSetup() {
       if (trimmedUsername !== currentUsername) {
         await api.put('/profile/username', { username: trimmedUsername, currentPassword });
       }
-      // 2. Password (required — clears the first-login flag server-side)
+      // 2. Password (required clears the first-login flag server-side)
       await api.post('/profile/change-password', { currentPassword, newPassword });
 
       // 3. Refresh stored user and enter the app
@@ -125,7 +125,7 @@ function FirstLoginSetup() {
       <div className="card-flat" style={{ width: '100%', maxWidth: '440px', padding: '32px 28px' }}>
         <h2 style={{ margin: '0 0 4px', fontSize: '20px' }}>Pengaturan Akun</h2>
         <p style={{ margin: '0 0 20px', fontSize: '13.5px', color: 'var(--slate)' }}>
-          Login pertama — atur username dan password Anda untuk melanjutkan.
+          Login pertama - atur username dan password Anda untuk melanjutkan.
         </p>
 
           {message && (

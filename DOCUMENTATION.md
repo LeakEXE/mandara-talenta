@@ -121,7 +121,7 @@ SUPERADMIN_SETUP_PASSWORD=password_awal_rahasia
 
 > **Login pertama:** database baru berisi ADMIN001 dengan password placeholder.
 > Isi `SUPERADMIN_SETUP_PASSWORD` di `.env`, login dengan username `ADMIN001` dan
-> password tersebut — password otomatis di-hash saat login. Segera ganti password
+> password tersebut - password otomatis di-hash saat login. Segera ganti password
 > lewat menu Profile, lalu hapus variabel itu dari `.env`. Tidak ada login
 > `ADMIN001/admin123` sebelum langkah ini dilakukan.
 
@@ -349,7 +349,7 @@ flowchart LR
     F --> G[Update Leaderboard]
 ```
 
-> Catatan: tidak ada batas 0–100 — nilai IPT boleh negatif
+> Catatan: tidak ada batas 0–100 - nilai IPT boleh negatif
 > (lihat `backend/utils/ipt.js`). Batas minimum IPT per tingkat
 > diatur di menu Konfigurasi IPT.
 

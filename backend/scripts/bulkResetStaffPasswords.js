@@ -1,6 +1,6 @@
 // Bulk password reset for staff accounts (guru/pegawai).
 // Sets one shared temporary password + optionally forces /setup-akun on next
-// login — same outcome as PUT /users/:id/reset-password, but for every staff
+// login same outcome as PUT /users/:id/reset-password, but for every staff
 // account at once. Superadmin and siswa accounts are never touched.
 //
 // Usage:
@@ -16,7 +16,7 @@
 //   --limit=N         Only process the first N matching rows.
 //   --dry-run         Preview without writing. Implied when --yes is absent.
 //
-// Distribute the password to staff yourself afterwards — it is never written
+// Distribute the password to staff yourself afterwards it is never written
 // to logs or disk by this script.
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
@@ -57,12 +57,12 @@ async function main(argv) {
     let sql = `SELECT id, nama, nip, role FROM users WHERE role IN (${roles.map(() => '?').join(', ')}) ORDER BY id`;
     if (opts.limit !== null) sql += ` LIMIT ${opts.limit}`;
     const [rows] = await db.query(sql, roles);
-    console.log(`Found ${rows.length} staff account(s) [${roles.join(', ')}]${apply ? '' : ' (preview — pass --yes to apply)'}`);
+    console.log(`Found ${rows.length} staff account(s) [${roles.join(', ')}]${apply ? '' : ' (preview - pass --yes to apply)'}`);
     for (const row of rows) {
         console.log(`  id=${row.id} nama=${row.nama} nip=${row.nip || '-'} role=${row.role}`);
     }
     if (rows.length === 0 || !apply) {
-        if (rows.length > 0 && !apply) console.log('Dry run — no rows were updated. Re-run with --yes to apply.');
+        if (rows.length > 0 && !apply) console.log('Dry run - no rows were updated. Re-run with --yes to apply.');
         return { applied: 0, total: rows.length };
     }
 
@@ -101,7 +101,7 @@ async function main(argv) {
         );
     }
 
-    console.log(`Done. Reset password for ${applied}/${rows.length} account(s). Distribute the new password to staff yourself — it was not written anywhere.`);
+    console.log(`Done. Reset password for ${applied}/${rows.length} account(s). Distribute the new password to staff yourself - it was not written anywhere.`);
     return { applied, total: rows.length };
 }
 

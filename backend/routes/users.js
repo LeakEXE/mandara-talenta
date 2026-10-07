@@ -176,7 +176,7 @@ router.post('/bulk-update-ipt-awal', auth, superAdminOnly, async (req, res) => {
     }
 });
 
-// Siswa headcount per grade (for KonfigurasiIPT labels — paginated /users
+// Siswa headcount per grade (for KonfigurasiIPT labels paginated /users
 // can't answer "how many" without fetching every page).
 router.get('/counts-by-grade', auth, superAdminOnly, async (req, res) => {
     try {
@@ -632,7 +632,7 @@ router.get('/lookup', auth, teacherOrSuperAdmin, async (req, res) => {
     }
 });
 
-// Get student approved records (any authenticated user — the leaderboard
+// Get student approved records (any authenticated user the leaderboard
 // already exposes every siswa's name/NIS/kelas/totals, so approved records
 // are no additional exposure; used by the leaderboard detail modals)
 router.get('/:id/records', auth, async (req, res) => {
@@ -723,7 +723,7 @@ router.get('/:id', auth, async (req, res) => {
     }
 });
 
-// Create student account (Superadmin only — other roles have no create access)
+// Create student account (Superadmin only other roles have no create access)
 router.post('/create-student', auth, superAdminOnly, async (req, res) => {
     try {
         const { nama, nis, jurusan, password, wali_kelas, grha, tahun_pelajaran } = req.body;

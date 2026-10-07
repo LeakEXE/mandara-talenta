@@ -742,7 +742,7 @@ function InputEvent() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleFileChange}
@@ -838,7 +838,7 @@ function InputEvent() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF — maks 10MB)</label>
+          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
           <input
             type="file"
             onChange={handleEditFileChange}

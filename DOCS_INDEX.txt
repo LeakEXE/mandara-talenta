@@ -2,7 +2,7 @@
 WEBSITE IPT BALI MANDARA - DOKUMENTASI & FLOWCHART
 ================================================================================
 
-Dibuat: 8 Mei 2026 — direvisi 27 September 2026
+Dibuat: 8 Mei 2026 - direvisi 27 September 2026
 Sistem: Mandara Talenta v0.2
 Deskripsi: Mandara Talenta (Manajemen dan Pengembangan Karakter Talenta) Siswa
 
@@ -231,7 +231,7 @@ ALUR KERJA SISTEM
    Select input type -> Select student -> Fill form -> Upload bukti
    -> Submit -> Pending -> Approval -> IPT update
 
-3. APPROVAL FLOW (satu tingkat — superadmin saja):
+3. APPROVAL FLOW (satu tingkat - superadmin saja):
    Pending -> Superadmin review (menu Approvals) -> (Approve/Reject + alasan)
    -> Apply changes -> Update IPT -> Log history -> Notify user
    Input langsung superadmin otomatis approved tanpa antrean.
@@ -284,7 +284,7 @@ KONTAK & SUPPORT
 ================================================================================
 
 System: Mandara Talenta v0.2
-Created: May 8, 2026 — revised September 27, 2026
+Created: May 8, 2026 - revised September 27, 2026
 
 Dokumentasi ini mencakup:
 - System architecture

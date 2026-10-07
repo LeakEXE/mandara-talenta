@@ -248,27 +248,10 @@ router.get('/ipt-card/:userId', auth, async (req, res) => {
             return res.status(400).json({ message: 'ID siswa tidak valid' });
         }
 
-        // If user is a teacher, check if the student is in their wali kelas class
-        if (req.user.role === 'guru' || req.user.role === 'pegawai') {
-            const waliKelasClass = await getTeacherWaliKelasClass(req.user.id);
-            if (!waliKelasClass) {
-                return res.status(403).json({ message: 'Anda bukan wali kelas' });
-            }
-            
-            // Check if the student belongs to their class
-            const [studentCheck] = await db.query(
-                `SELECT kelas FROM users WHERE id = ? AND role = 'siswa'`,
-                [userId]
-            );
-            
-            if (studentCheck.length === 0) {
-                return res.status(404).json({ message: 'Siswa tidak ditemukan' });
-            }
-            
-            if (studentCheck[0].kelas !== waliKelasClass) {
-                return res.status(403).json({ message: 'Anda hanya dapat mengakses siswa di kelas Anda' });
-            }
-        }
+        // NOTE: no wali-kelas gate here every guru/pegawai may view any
+        // student's card (read-only; same data the leaderboard exposes).
+        // Print-scope endpoints below (/reports/students, /class-ipt/:kelas)
+        // intentionally stay wali-kelas-restricted.
 
         const cardData = await buildIptCardBreakdown(userId, getCutoffDate(req));
         if (!cardData) {

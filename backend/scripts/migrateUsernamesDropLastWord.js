@@ -13,7 +13,7 @@
 //   superadmin can inform affected users of their new login name.
 //
 // WARNING: this cannot tell auto-generated names apart from user-chosen
-// custom names — a custom name that differs from the recomputed one WILL be
+// custom names a custom name that differs from the recomputed one WILL be
 // renamed. Always review the --dry-run output first.
 //
 // Usage:
@@ -91,7 +91,7 @@ function csvEscape(value) {
         }
 
         if (DRY_RUN) {
-            console.log('Dry run — no rows were updated. Re-run without --dry-run to apply.');
+            console.log('Dry run - no rows were updated. Re-run without --dry-run to apply.');
         } else {
             console.log(`Done. Migrated ${mappings.length} username(s) to the drop-last-word form.`);
             if (mappings.length > 0 && !FORCE_SETUP) {

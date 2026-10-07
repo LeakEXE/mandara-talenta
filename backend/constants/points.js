@@ -4,7 +4,7 @@
 const { getIPTConfig } = require('../utils/iptConfig');
 const db = require('../config/database');
 
-// Default values as fallback — aligned with ipt_config_schema.sql
+// Default values as fallback aligned with ipt_config_schema.sql
 const PRESTASI_POINTS = {
     'juara_i': { sekolah: 5, kecamatan: 8, kabupaten: 12, provinsi: 30, nasional: 40, internasional: 50 },
     'juara_ii': { sekolah: 4, kecamatan: 7, kabupaten: 10, provinsi: 25, nasional: 35, internasional: 45 },

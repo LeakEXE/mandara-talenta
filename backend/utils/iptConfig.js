@@ -142,7 +142,7 @@ async function getIptAwalForGrade(gradePrefix) {
 }
 
 /**
- * Get default configuration (fallback) — aligned with ipt_config_schema.sql
+ * Get default configuration (fallback) aligned with ipt_config_schema.sql
  */
 function getDefaultConfig() {
   return {

@@ -3,7 +3,7 @@ import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 
 // ---------------------------------------------------------------------------
-// Concurrent-users load test — read-only user journey.
+// Concurrent-users load test read-only user journey.
 // Models: login once per VU -> loop: dashboard/stats, profile, search,
 // leaderboard, prestasi/teachers. Think-time between steps.
 //
@@ -13,9 +13,9 @@ import { Counter, Rate, Trend } from 'k6/metrics';
 // So from ONE k6 IP you WILL see 429s above ~10 VUs. That's expected and
 // tracked separately (rate_limited), not counted as failure.
 //
-// Usage — staging/high VU (recommended for capacity):
+// Usage staging/high VU (recommended for capacity):
 //   k6 run -e BASE_URL=http://localhost:5000 -e USERNAME=guru_test -e PASSWORD=secret k6/load-concurrent.js
-// Usage — prod (keep it gentle, 5 VUs):
+// Usage prod (keep it gentle, 5 VUs):
 //   k6 run -e BASE_URL=http://YOUR_PROD_IP:5000 -e USERNAME=guru_test -e PASSWORD=secret -e MAX_VUS=5 k6/load-concurrent.js
 // Multiple accounts (spreads approval/permission paths, same IP budget):
 //   k6 run -e BASE_URL=... -e USER_POOL="guru1:pw1,guru2:pw2,siswa1:pw3" k6/load-concurrent.js
@@ -132,7 +132,7 @@ function recordCommon(res) {
 }
 
 function doLogin() {
-  // Fail fast: bad creds (400) must NOT be retried hot — loginLimiter locks
+  // Fail fast: bad creds (400) must NOT be retried hot loginLimiter locks
   // the whole IP after 5 FAILED logins / 15 min and successes don't reset it.
   // After 2 bad attempts this VU parks itself to stop the lockout spiral.
   if (loginFailures >= 2) {
@@ -155,7 +155,7 @@ function doLogin() {
     loggedIn = true;
     loginFailures = 0;
     if (!storeTokenFromLogin(res)) {
-      console.error('LOGIN VU=' + __VU + ' 200 but no token cookie found — falling back to jar');
+      console.error('LOGIN VU=' + __VU + ' 200 but no token cookie found - falling back to jar');
     }
     return true;
   }
@@ -163,14 +163,14 @@ function doLogin() {
   if (res.status === 400) {
     // Wrong username/password (or NIS/NIP used as username). Do NOT retry fast.
     console.error(
-      `Login 400 VU=${__VU} — bad username/password, backing off 60s. body=${res.body?.slice(0, 200)}`
+      `Login 400 VU=${__VU} - bad username/password, backing off 60s. body=${res.body?.slice(0, 200)}`
     );
     sleep(60);
     return false;
   }
   if (res.status === 429) {
     // IP is now locked for ~15 min. Park this VU instead of hammering.
-    console.error(`Login 429 VU=${__VU} — IP locked, parking 120s.`);
+    console.error(`Login 429 VU=${__VU} - IP locked, parking 120s.`);
     sleep(120);
     return false;
   }
@@ -185,7 +185,7 @@ export default function () {
     return; // back off, avoid lockout loop
   }
 
-  // 1. Dashboard — heaviest query (11 aggregations). Core of the test.
+  // 1. Dashboard - heaviest query (11 aggregations). Core of the test.
   let r = http.get(`${BASE_URL}/api/dashboard/stats`, {
     headers: authHeaders(),
     tags: { name: 'GET /api/dashboard/stats' },

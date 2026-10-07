@@ -231,12 +231,12 @@ router.delete('/perilaku-ratings/:id', auth, superAdminOnly, async (req, res) =>
 // ---- Batas minimum Total IPT per tingkat (X, XI, XII) ----
 // Display-only setting: totals below the grade's threshold render red.
 // 0 = nonaktif untuk tingkat tersebut. Missing grade rows fall back to the
-// legacy single `min_ipt` row (if any), then 0 — so existing deployments keep
+// legacy single `min_ipt` row (if any), then 0 so existing deployments keep
 // their current value for all grades until saved per grade here.
 const MIN_IPT_CATEGORY = 'pengaturan';
 const MIN_IPT_GRADES = ['X', 'XI', 'XII'];
 
-// Dibaca semua role yang login — dipakai untuk menandai total IPT di bawah batas (merah).
+// Dibaca semua role yang login dipakai untuk menandai total IPT di bawah batas (merah).
 router.get('/min-ipt-per-grade', auth, async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -313,7 +313,7 @@ router.get('/ipt-awal-per-grade', auth, async (req, res) => {
     }
 });
 
-// Save all three grade defaults at once. Does NOT touch existing students —
+// Save all three grade defaults at once. Does NOT touch existing students
 // the Edit IPT Awal page applies values to current students via bulk-update.
 router.put('/ipt-awal-per-grade', auth, superAdminOnly, async (req, res) => {
     try {

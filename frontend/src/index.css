@@ -52,7 +52,7 @@
   --purple: #8b5cf6;
   --purple-bg: #ede9fe;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  /* Fixed mobile header height — content top offset derives from this */
+  /* Fixed mobile header height content top offset derives from this */
   --mobile-header-h: 60px;
 }
 
@@ -1551,7 +1551,7 @@ p {
   padding: 0 6px;
 }
 
-/* Evidence (bukti) viewer — images + PDF */
+/* Evidence (bukti) viewer images + PDF */
 .evidence-pdf {
   display: flex;
   flex-direction: column;

@@ -45,7 +45,7 @@ async function isUsernameAvailable(username, excludeUserId = null) {
 // Uniqueness (no random suffix):
 //  1. plain slug when free, e.g. 'deanputra';
 //  2. slug + meaningful suffix derived from NIS/NIP (digits mapped a-j),
-//     e.g. 'deanputrabcdef' for NIS 12345 — unique because NIS/NIP is unique;
+//     e.g. 'deanputrabcdef' for NIS 12345 unique because NIS/NIP is unique;
 //  3. slug + deterministic a, b, ... z, aa, ab... enumeration as last resort.
 // Academic degrees/titles are not part of a username: cut everything from
 // the first comma on ("Dipa, S.Pd." -> "Dipa"), then drop any leftover

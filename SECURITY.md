@@ -1,4 +1,4 @@
-# 🔒 Mandara Talenta — Dokumentasi Keamanan
+# 🔒 Mandara Talenta - Dokumentasi Keamanan
 
 > File ini mendeskripsikan langkah keamanan yang **benar-benar diimplementasikan**
 > di kode (`backend/middleware/security.js`, `backend/middleware/auth.js`,
@@ -28,11 +28,11 @@
 - [ ] `ALLOWED_ORIGINS` diisi domain produksi, tanpa wildcard
 - [ ] Backup berkala database `ipt_school` + folder `backend/uploads/`
 - [ ] `npm audit` berkala; update dependensi tiap kuartal
-- [ ] Jangan commit file `.env` ke git (sudah ada di `.gitignore` — verifikasi)
+- [ ] Jangan commit file `.env` ke git (sudah ada di `.gitignore` - verifikasi)
 
 ## Respons Insiden
 
-1. Putar (rotate) `JWT_SECRET` — semua sesi aktif otomatis invalid.
+1. Putar (rotate) `JWT_SECRET` - semua sesi aktif otomatis invalid.
 2. Ganti password akun yang terdampak lewat superadmin (menu Kelola Akun).
 3. Periksa `activity_logs` (menu Logs) untuk aktivitas mencurigakan.
 4. Bila ada upload berbahaya, hapus file di `backend/uploads/` dan cabut izin input user terkait.
@@ -42,5 +42,5 @@
 - Rate limit berbasis IP: tidak efektif bila banyak user di belakang satu NAT/proxy
   tanpa konfigurasi `TRUST_PROXY` yang benar (lihat komentar di `server.js`).
 - Tidak ada 2FA; keamanan akun mengandalkan kekuatan password + rate limit login.
-- File `backend/.env` adalah satu-satunya penyimpanan secret — amankan permission-nya
+- File `backend/.env` adalah satu-satunya penyimpanan secret - amankan permission-nya
   di server (`chmod 600` di Linux).

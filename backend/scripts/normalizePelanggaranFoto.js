@@ -90,7 +90,7 @@ async function main() {
             fixed++;
         }
 
-        console.log(`Done. fixed=${fixed} skipped=${skipped} unresolved=${unresolved}${DRY_RUN ? ' (dry run — no rows updated)' : ''}`);
+        console.log(`Done. fixed=${fixed} skipped=${skipped} unresolved=${unresolved}${DRY_RUN ? ' (dry run - no rows updated)' : ''}`);
         try {
             if (db.pool && typeof db.pool.end === 'function') await db.pool.end();
         } catch (_) { /* ignore pool shutdown errors */ }

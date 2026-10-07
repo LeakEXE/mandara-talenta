@@ -471,7 +471,7 @@ async function main() {
       console.log('\nDatabase matches skema.sql (tables, columns, types, indexes).');
     }
   } else {
-    console.log('\nApply pass finished — re-run without --apply to confirm clean.');
+    console.log('\nApply pass finished - re-run without --apply to confirm clean.');
   }
 
   try {

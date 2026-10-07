@@ -121,7 +121,7 @@ router.post('/bulk-students', auth, superAdminOnly, async (req, res) => {
         const { can_input_prestasi, can_input_organisasi, can_input_kepanitiaan, can_input_event } = req.body;
 
         // This endpoint only targets students (u.role = 'siswa'), and pelanggaran/perilaku
-        // are guru-only input types — always force them off regardless of the request body.
+        // are guru-only input types always force them off regardless of the request body.
         await db.query(
             `UPDATE permissions p 
              JOIN users u ON p.user_id = u.id 

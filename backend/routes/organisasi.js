@@ -129,7 +129,7 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         // Recompute the total from approved records (same formula as
-        // syncIpt.js) — never arithmetic, so double-approvals and drift
+        // syncIpt.js) never arithmetic, so double-approvals and drift
         // are impossible.
         await recomputeAndStoreIpt(organisasiData.user_id, {
             jenis: 'organisasi',
@@ -257,7 +257,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             }
 
             // Approved records feed the total: recompute it (same formula as
-            // syncIpt.js) so point edits — and any pre-existing drift — land
+            // syncIpt.js) so point edits and any pre-existing drift land
             // exactly. Pending records never touched IPT.
             if (organisasiData.status === 'approved') {
                 await recomputeAndStoreIpt(organisasiData.user_id, {
@@ -313,7 +313,7 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         await conn.query('DELETE FROM organisasi WHERE id = ?', [organisasiId]);
 
         // Approved records contributed to the total: recompute it from the
-        // remaining approved records (same formula as syncIpt.js) — this
+        // remaining approved records (same formula as syncIpt.js) this
         // also heals any pre-existing drift. Pending/rejected records never
         // touched IPT, so nothing more to do for them.
         if (wasApproved) {
@@ -337,7 +337,7 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         await conn.commit();
 
         // Delete the evidence file when no other row references it anymore
-        // (kelompok siblings may share one file — never strand them).
+        // (kelompok siblings may share one file never strand them).
         if (organisasiData.foto) {
             await deletePhotoIfOrphan(db, organisasiData.foto, { folderHint: 'organisasi' });
         }

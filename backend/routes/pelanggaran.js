@@ -136,7 +136,7 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         // Recompute the total from approved records (same formula as
-        // syncIpt.js) — never arithmetic, so double-approvals and drift
+        // syncIpt.js) never arithmetic, so double-approvals and drift
         // are impossible.
         await recomputeAndStoreIpt(pelanggaranData.user_id, {
             jenis: 'pelanggaran',
@@ -264,7 +264,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             }
 
             // Approved records feed the total: recompute it (same formula as
-            // syncIpt.js) so point edits — and any pre-existing drift — land
+            // syncIpt.js) so point edits and any pre-existing drift land
             // exactly. Pending records never touched IPT.
             if (pelanggaranData.status === 'approved') {
                 await recomputeAndStoreIpt(pelanggaranData.user_id, {
@@ -320,7 +320,7 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         await conn.query('DELETE FROM pelanggaran WHERE id = ?', [pelanggaranId]);
 
         // Approved violations contributed to the total: recompute it from the
-        // remaining approved records (same formula as syncIpt.js) — removing
+        // remaining approved records (same formula as syncIpt.js) removing
         // a violation raises the total back and any pre-existing drift is
         // healed as well. Pending/rejected records never touched IPT.
         if (wasApproved) {

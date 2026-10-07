@@ -2,7 +2,7 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 
 // ---------------------------------------------------------------------------
-// Smoke test — 1 VU, prod-safe. Verifies wiring + baseline latency.
+// Smoke test 1 VU, prod-safe. Verifies wiring + baseline latency.
 // Run:  k6 run k6/smoke.js
 // Prod: k6 run -e BASE_URL=http://YOUR_PROD_IP:5000 -e USERNAME=guru_test -e PASSWORD=secret k6/smoke.js
 // ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ function failEarly(msg) {
 }
 
 export default function () {
-  // 1. Public endpoint (no auth) — login page branding fetch.
+  // 1. Public endpoint (no auth) login page branding fetch.
   const pub = http.get(`${BASE_URL}/api/school-config/public`);
   check(pub, { 'public 200': (r) => r.status === 200 });
 
@@ -59,7 +59,7 @@ export default function () {
     return;
   }
 
-  // 3. Heaviest endpoint — 11 parallel aggregation queries.
+  // 3. Heaviest endpoint 11 parallel aggregation queries.
   const stats = http.get(`${BASE_URL}/api/dashboard/stats`);
   check(stats, { 'dashboard/stats 200': (r) => r.status === 200 });
 

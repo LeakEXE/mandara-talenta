@@ -38,7 +38,7 @@ function PointBadge({ value, negative }) {
   );
 }
 
-// Full field set per category — more detailed than the summary cards in
+// Full field set per category more detailed than the summary cards in
 // StudentRecordsHistory. Returns { title, subtitle, fields, point, negative, foto }.
 function describeRecord(item, category) {
   switch (category) {
