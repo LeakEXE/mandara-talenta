@@ -298,6 +298,18 @@ function IzinAkun() {
     setSelectionRole(null);
   };
 
+  // Selection across ALL filtered users (every page), not just the visible
+  // one — for bulk actions on hundreds of accounts at once.
+  const handleSelectAllFiltered = () => {
+    const selectable = filteredUsers.filter(isUserSelectable);
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      selectable.forEach((u) => next.add(u.id));
+      return next;
+    });
+    setSelectionRole(null);
+  };
+
   const handleClearSelection = () => {
     setSelectedUserIds(new Set());
     setSelectionRole(null);
@@ -811,6 +823,9 @@ function IzinAkun() {
             )}
             <button className="btn btn-outline btn-sm" onClick={handleSelectAllVisible}>
               Pilih semua di halaman ini ({pagedUsers.filter(isUserSelectable).length})
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={handleSelectAllFiltered}>
+              Pilih semua hasil filter ({filteredUsers.filter(isUserSelectable).length})
             </button>
             {selectedUserIds.size > 0 && (
               <button className="btn btn-outline btn-sm" onClick={handleClearSelection}>
