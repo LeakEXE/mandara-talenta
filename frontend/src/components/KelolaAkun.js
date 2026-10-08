@@ -263,6 +263,63 @@ function KelolaAkun() {
     setSelectionRole(null);
   };
 
+  const [selectingAll, setSelectingAll] = useState(false);
+
+  // Collect IDs across ALL pages matching the current search/filters
+  // (superadmin never selectable). Hands off to the normal bulk flow after.
+  const selectAllMatching = async () => {
+    setSelectingAll(true);
+    try {
+      const params = new URLSearchParams({
+        limit: 200,
+        search: searchRef.current
+      });
+      const f = filtersRef.current;
+      if (f.role) params.append('role', f.role);
+      if (f.jabatan) params.append('jabatan', f.jabatan);
+      if (f.kelas) params.append('kelas', f.kelas);
+      if (f.grha) params.append('grha', f.grha);
+      if (f.jurusan) params.append('jurusan', f.jurusan);
+      if (f.tahun_pelajaran) params.append('tahun_pelajaran', f.tahun_pelajaran);
+
+      const ids = [];
+      const roles = new Set();
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const res = await api.get(`/users?${params.toString()}&page=${page}`);
+        const list = res.data.users || [];
+        list.forEach((u) => {
+          if (u.role !== 'superadmin') {
+            ids.push(u.id);
+            roles.add(u.role);
+          }
+        });
+        totalPages = res.data.pagination?.totalPages ?? 1;
+        page += 1;
+      } while (page <= totalPages);
+
+      setSelectedIds(ids);
+      const hasSiswa = roles.has('siswa');
+      const hasStaff = roles.has('guru') || roles.has('pegawai');
+      if (hasSiswa && hasStaff) {
+        setSelectionRole(null);
+      } else if (hasStaff) {
+        setSelectionRole('guru');
+      } else if (ids.length > 0) {
+        setSelectionRole('siswa');
+      } else {
+        setSelectionRole(null);
+        setMessage('Tidak ada pengguna yang cocok dengan filter');
+      }
+    } catch (error) {
+      console.error('Error collecting all matching users:', error);
+      setMessage('Gagal mengumpulkan semua hasil filter');
+    } finally {
+      setSelectingAll(false);
+    }
+  };
+
   const selectAllFiltered = () => {
     const selectable = filteredUsers.filter((u) => u.role !== 'superadmin');
     if (selectable.length === 0) {
@@ -1015,6 +1072,65 @@ function KelolaAkun() {
           </div>
         </div>
 
+        {/* Selection (below filters, above the table) */}
+        {userRole === 'superadmin' && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px', fontSize: '12px', color: '#666' }}>
+            <button
+              onClick={selectAllFiltered}
+              style={{
+                padding: '6px 12px', border: '1px solid #d0d0d0', background: 'white', borderRadius: '3px',
+                fontSize: '12px', cursor: 'pointer', color: '#333'
+              }}
+              onMouseOver={(e) => { e.target.style.background = '#f5f5f5'; e.target.style.borderColor = '#bbb'; }}
+              onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#d0d0d0'; }}
+            >
+              Pilih Semua
+            </button>
+            <button
+              onClick={selectAllMatching}
+              disabled={selectingAll}
+              style={{
+                padding: '6px 12px', border: '1px solid #d0d0d0', background: 'white', borderRadius: '3px',
+                fontSize: '12px', cursor: selectingAll ? 'wait' : 'pointer', color: '#333',
+                opacity: selectingAll ? 0.6 : 1
+              }}
+              onMouseOver={(e) => { e.target.style.background = '#f5f5f5'; e.target.style.borderColor = '#bbb'; }}
+              onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#d0d0d0'; }}
+            >
+              {selectingAll ? 'Mengumpulkan…' : 'Pilih semua hasil filter'}
+            </button>
+            {selectedIds.length > 0 && (
+              <span><strong>{selectedIds.length}</strong> dipilih</span>
+            )}
+            {selectedIds.length > 0 && (
+              <>
+                <button
+                  onClick={handleBulkDelete}
+                  style={{
+                    padding: '6px 12px', border: '1px solid var(--border-color)', background: 'var(--danger-color)', borderRadius: '3px',
+                    fontSize: '12px', cursor: 'pointer', color: 'white'
+                  }}
+                  onMouseOver={(e) => { e.target.style.background = 'var(--danger-dark)'; }}
+                  onMouseOut={(e) => { e.target.style.background = 'var(--danger-color)'; }}
+                >
+                  Hapus ({selectedIds.length})
+                </button>
+                <button
+                  onClick={clearSelection}
+                  style={{
+                    padding: '6px 12px', border: '1px solid #d0d0d0', background: 'white', borderRadius: '3px',
+                    fontSize: '12px', cursor: 'pointer', color: '#333'
+                  }}
+                  onMouseOver={(e) => { e.target.style.background = '#f5f5f5'; e.target.style.borderColor = '#bbb'; }}
+                  onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#d0d0d0'; }}
+                >
+                  Batal
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Table */}
         <div style={{ overflowX: 'auto', marginBottom: '24px', border: '1px solid #d0d0d0', borderRadius: '4px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -1201,48 +1317,6 @@ function KelolaAkun() {
           </table>
         </div>
 
-        {/* Bulk Actions */}
-        {userRole === 'superadmin' && (
-          <div style={{ display: 'flex', gap: '8px', paddingTop: '16px', borderTop: '1px solid #e0e0e0', marginBottom: '12px', flexWrap: 'wrap' }}>
-            <button
-              onClick={selectAllFiltered}
-              style={{
-                padding: '6px 12px', border: '1px solid #d0d0d0', background: 'white', borderRadius: '3px',
-                fontSize: '12px', cursor: 'pointer', color: '#333'
-              }}
-              onMouseOver={(e) => { e.target.style.background = '#f5f5f5'; e.target.style.borderColor = '#bbb'; }}
-              onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#d0d0d0'; }}
-            >
-              Pilih Semua
-            </button>
-            {selectedIds.length > 0 && (
-              <>
-                <button
-                  onClick={handleBulkDelete}
-                  style={{
-                    padding: '6px 12px', border: '1px solid var(--border-color)', background: 'var(--danger-color)', borderRadius: '3px',
-                    fontSize: '12px', cursor: 'pointer', color: 'white'
-                  }}
-                  onMouseOver={(e) => { e.target.style.background = 'var(--danger-dark)'; }}
-                  onMouseOut={(e) => { e.target.style.background = 'var(--danger-color)'; }}
-                >
-                  Hapus ({selectedIds.length})
-                </button>
-                <button
-                  onClick={clearSelection}
-                  style={{
-                    padding: '6px 12px', border: '1px solid #d0d0d0', background: 'white', borderRadius: '3px',
-                    fontSize: '12px', cursor: 'pointer', color: '#333'
-                  }}
-                  onMouseOver={(e) => { e.target.style.background = '#f5f5f5'; e.target.style.borderColor = '#bbb'; }}
-                  onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#d0d0d0'; }}
-                >
-                  Batal
-                </button>
-              </>
-            )}
-          </div>
-        )}
         {/* Pagination visible to superadmin and guru */}
         <div style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px',
