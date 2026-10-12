@@ -62,6 +62,24 @@ router.post('/', auth, checkPermission('perilaku'), async (req, res) => {
             kepercayaan_diri
         } = req.body;
 
+        // Empty NIS used to fall through to resolveStudentIdByNis' self-fallback,
+        // filing the record under the submitter with blank identity.
+        for (const f of ['nama', 'nis', 'grha']) {
+            if (req.body?.[f] === undefined || req.body?.[f] === null || String(req.body[f]).trim() === '') {
+                const error = new Error(`Field wajib diisi: ${f}`);
+                error.statusCode = 400;
+                throw error;
+            }
+        }
+        const hasKarakter = (karakter_siswa && String(karakter_siswa).trim() !== '') ||
+            [tanggung_jawab, disiplin, kepedulian, kemandirian, spiritual, kejujuran, kepercayaan_diri]
+                .some((v) => v !== undefined && v !== null && String(v).trim() !== '');
+        if (!hasKarakter) {
+            const error = new Error('Field wajib diisi: karakter_siswa');
+            error.statusCode = 400;
+            throw error;
+        }
+
         const userId = await resolveStudentIdByNis(nis, req.user.id);
         const karakter = karakter_siswa || formatPerilakuKarakter({
             tanggung_jawab,

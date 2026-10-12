@@ -27,6 +27,22 @@ const { getCurrentAcademicYear } = require('../utils/academicYear');
 const fs = require('fs');
 // Local file storage only - Google Drive removed
 
+// Reject blank required fields with a clear 400. Without this, an empty NIS
+// falls through to resolveStudentIdByNis' self-fallback and files the record
+// under the submitter with blank identity; unknown point keys silently score 0.
+// All submit handlers below surface error.statusCode, so throwing is enough.
+function requireFields(body, fields) {
+    const missing = fields.filter((f) => {
+        const v = body?.[f];
+        return v === undefined || v === null || String(v).trim() === '';
+    });
+    if (missing.length > 0) {
+        const error = new Error(`Field wajib diisi: ${missing.join(', ')}`);
+        error.statusCode = 400;
+        throw error;
+    }
+}
+
 // Notify superadmins AND staff holding the approval scope for this type.
 async function getApprovalRecipients(jenis, context = {}) {
     const { kelas = [], pembinaIds = [], pembinaNames = [] } = context;
@@ -145,6 +161,13 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
     try {
         const userRole = req.user.role;
         const { nama, nis, nama_lomba, pembina, pembina_id, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
+        // Kelompok carries its members in `anggota` (validated below); individu
+        // must name a real student up front (empty NIS used to self-file).
+        if (kategori_lomba === 'kelompok') {
+            requireFields(req.body, ['nama_lomba', 'juara', 'kategori']);
+        } else {
+            requireFields(req.body, ['nama', 'nis', 'grha', 'nama_lomba', 'juara', 'kategori']);
+        }
         // Kelompok mode: anggota = [{ nama, nis }, ...] (min 2). Individu: single nama/nis.
         let anggota = [];
         if (kategori_lomba === 'kelompok') {
@@ -293,6 +316,7 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, keterangan, jenis_pelanggaran } = req.body;
+        requireFields(req.body, ['nama', 'nis', 'grha', 'keterangan', 'jenis_pelanggaran']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
         let foto_path = req.file ? saveFileLocally(req.file.path) : null;
         console.log('Pelanggaran - Using local path:', foto_path);
@@ -382,6 +406,7 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, nama_event, tingkat } = req.body;
+        requireFields(req.body, ['nama', 'nis', 'grha', 'nama_event', 'tingkat']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
         let foto_path = req.file ? saveFileLocally(req.file.path) : null;
         console.log('Event - Using local path:', foto_path);
@@ -478,6 +503,7 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, jabatan_organisasi, kategori_organisasi } = req.body;
+        requireFields(req.body, ['nama', 'nis', 'grha', 'jabatan_organisasi', 'kategori_organisasi']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
         let foto_path = req.file ? saveFileLocally(req.file.path) : null;
         console.log('Organisasi - Using local path:', foto_path);
@@ -581,6 +607,7 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan } = req.body;
+        requireFields(req.body, ['nama', 'nis', 'grha', 'jabatan_kepanitiaan', 'kategori_kepanitiaan']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
         let foto_path = req.file ? saveFileLocally(req.file.path) : null;
         console.log('Kepanitiaan - Using local path:', foto_path);
