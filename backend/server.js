@@ -85,25 +85,31 @@ const corsOptions = {
     }
 
     // In production, check allowed origins
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS?.split(',') || [
       'http://localhost:3000',
       'http://202.162.215.133:3000',
       'http://202.162.215.133'
-    ];
+    ]).map((s) => s.trim()).filter(Boolean);
 
-    // Allow if origin is in allowed list or same IP different port
-    const isAllowed = allowedOrigins.some(allowed => {
+    // Allow if origin is in allowed list or same host, different port.
+    // URL parsing is guarded: a malformed entry must deny, never 500.
+    const isAllowed = allowedOrigins.some((allowed) => {
       // Exact match
       if (allowed === origin) return true;
-      // Same IP, different port
-      const allowedUrl = new URL(allowed);
-      const originUrl = new URL(origin);
-      return allowedUrl.hostname === originUrl.hostname;
+      try {
+        const allowedUrl = new URL(allowed);
+        const originUrl = new URL(origin);
+        return allowedUrl.hostname === originUrl.hostname;
+      } catch {
+        console.error(`[CORS] skipping malformed allowed origin: "${allowed}"`);
+        return false;
+      }
     });
 
     if (isAllowed) {
       callback(null, true);
     } else {
+      console.error(`[CORS] rejected origin "${origin}" (allowed: ${allowedOrigins.join(', ') || '(none)'})`);
       callback(new Error('Not allowed by CORS'));
     }
   },
