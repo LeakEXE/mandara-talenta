@@ -10,6 +10,25 @@ import { Plus, Download, CircleCheck, CircleX, BookOpen, Lightbulb } from 'lucid
 
 const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
 
+const GENDER_OPTIONS = [
+  { value: 'L', label: 'L - Laki-laki' },
+  { value: 'P', label: 'P - Perempuan' },
+];
+
+// Desil DTSEN (BPS/Kemensos): 1 = kesejahteraan terendah, 10 = tertinggi.
+const DESIL_OPTIONS = [
+  { value: 1, label: '1 - Sangat miskin' },
+  { value: 2, label: '2 - Miskin' },
+  { value: 3, label: '3 - Hampir miskin' },
+  { value: 4, label: '4 - Rentan miskin' },
+  { value: 5, label: '5 - Menengah bawah' },
+  { value: 6, label: '6 - Menengah' },
+  { value: 7, label: '7 - Menengah' },
+  { value: 8, label: '8 - Menengah atas' },
+  { value: 9, label: '9 - Kaya' },
+  { value: 10, label: '10 - Sangat kaya' },
+];
+
 const EXPORT_COLUMNS = [
   { key: 'nama', header: 'Nama', width: 25 },
   { key: 'username', header: 'Username', width: 16 },
@@ -20,6 +39,8 @@ const EXPORT_COLUMNS = [
   { key: 'kelas', header: 'Kelas', width: 12 },
   { key: 'jurusan', header: 'Jurusan', width: 10 },
   { key: 'grha', header: 'Grha', width: 12 },
+  { key: 'jenis_kelamin', header: 'L/P', width: 8 },
+  { key: 'desil', header: 'Desil', width: 8 },
   { key: 'tahun_pelajaran', header: 'Tahun Pelajaran', width: 16 },
   { key: 'no_hp', header: 'No HP', width: 16 },
   { key: 'alamat', header: 'Alamat', width: 25 },
@@ -388,6 +409,8 @@ function KelolaAkun() {
         username: user.username || '',
         jurusan: user.jurusan,
         grha: user.grha,
+        jenis_kelamin: user.jenis_kelamin || '',
+        desil: user.desil ?? '',
         tahun_pelajaran: user.tahun_pelajaran
       });
     } else if (user.role === 'guru' || user.role === 'pegawai') {
@@ -484,6 +507,26 @@ function KelolaAkun() {
               continue;
             }
 
+            // Optional welfare fields (server re-validates; empty = unknown)
+            const jenisKelaminRaw = getRowField(row, 'jenis_kelamin', 'Jenis Kelamin', 'JenisKelamin', 'Gender', 'JK', 'L/P');
+            const desilRaw = getRowField(row, 'desil', 'Desil');
+            if (jenisKelaminRaw && !['L', 'P'].includes(jenisKelaminRaw.trim().toUpperCase())) {
+              results.push({
+                status: 'error',
+                name: nama,
+                error: "Jenis kelamin tidak valid. Gunakan 'L' atau 'P'."
+              });
+              continue;
+            }
+            if (desilRaw && !/^(10|[1-9])$/.test(desilRaw.trim())) {
+              results.push({
+                status: 'error',
+                name: nama,
+                error: 'Desil tidak valid. Gunakan angka 1-10.'
+              });
+              continue;
+            }
+
             // Calculate expected class for better feedback
             const currentYear = new Date().getFullYear();
             const currentMonth = new Date().getMonth();
@@ -524,6 +567,8 @@ function KelolaAkun() {
               jurusan,
               grha: normalizeGrha(getRowField(row, 'grha', 'Grha', 'Gra', 'GRHA')) || 'Airsanya',
               tahun_pelajaran: tahunPelajaran,
+              jenis_kelamin: jenisKelaminRaw,
+              desil: desilRaw,
               password: getRowField(row, 'password', 'Password') || '123456'
             };
 
@@ -700,7 +745,9 @@ function KelolaAkun() {
         { header: 'Jurusan', key: 'Jurusan', width: 10 },
         { header: 'Grha', key: 'Grha', width: 12 },
         { header: 'TahunPelajaran', key: 'TahunPelajaran', width: 15 },
-        { header: 'Password', key: 'Password', width: 12 }
+        { header: 'Password', key: 'Password', width: 12 },
+        { header: 'JenisKelamin', key: 'JenisKelamin', width: 13 },
+        { header: 'Desil', key: 'Desil', width: 8 }
       ];
       templateData.forEach(row => worksheet.addRow(row));
 
@@ -735,6 +782,20 @@ function KelolaAkun() {
           'Tahun Pelajaran tidak valid',
           'Pilih TahunPelajaran dari daftar yang tersedia'
         );
+        worksheet.getCell(`H${rowNumber}`).dataValidation = validationFor(
+          ['L', 'P'],
+          'Jenis kelamin tidak valid',
+          "Isi 'L' (Laki-laki) atau 'P' (Perempuan)"
+        );
+        worksheet.getCell(`I${rowNumber}`).dataValidation = {
+          type: 'whole',
+          operator: 'between',
+          allowBlank: true,
+          formulae: [1, 10],
+          showErrorMessage: true,
+          errorTitle: 'Desil tidak valid',
+          error: 'Isi angka 1-10 (1 = sangat miskin, 10 = sangat kaya)'
+        };
       }
 
       await styleImportTemplateSheet(worksheet, {
@@ -744,7 +805,9 @@ function KelolaAkun() {
           Jurusan: 'Pilih dari daftar: TKJ 1, TKJ 2, DPIB 1, DPIB 2, TKR 1, TKR 2.',
           Grha: 'Pilih grha siswa dari daftar yang tersedia.',
           TahunPelajaran: 'Tahun pelajaran siswa tersebut masuk sekolah. Format YYYY-YYYY, contoh: 2026-2027.',
-          Password: 'Password awal akun (min. 6 karakter). User wajib menggantinya saat login pertama.'
+          Password: 'Password awal akun (min. 6 karakter). User wajib menggantinya saat login pertama.',
+          JenisKelamin: "Jenis kelamin siswa: 'L' (Laki-laki) atau 'P' (Perempuan). Boleh kosong.",
+          Desil: 'Desil kesejahteraan keluarga 1-10 (1 = sangat miskin, 10 = sangat kaya). Boleh kosong.'
         }
       });
 
@@ -1143,6 +1206,8 @@ function KelolaAkun() {
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '80px' }}>Role</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '100px' }}>Kelas</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '90px' }}>Grha</th>
+                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '50px' }}>L/P</th>
+                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '60px' }}>Desil</th>
                 {userRole === 'superadmin' && (
                   <>
                     <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '100px' }}>Jurusan</th>
@@ -1204,6 +1269,12 @@ function KelolaAkun() {
                         {user.grha}
                       </span>
                     ) : '-'}
+                  </td>
+                  <td style={{ padding: '10px 12px', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
+                    {user.jenis_kelamin || '-'}
+                  </td>
+                  <td style={{ padding: '10px 12px', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
+                    {user.desil ?? '-'}
                   </td>
                   {userRole === 'superadmin' && (
                     <>
@@ -1448,6 +1519,25 @@ function KelolaAkun() {
                       <option key={grha} value={grha}>{grha}</option>
                     ))}
                   </select>
+                </div>
+                <div className="form-group">
+                  <label>Jenis Kelamin</label>
+                  <select value={formData.jenis_kelamin || ''} onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}>
+                    <option value="" disabled hidden>Pilih Jenis Kelamin</option>
+                    {GENDER_OPTIONS.map(g => (
+                      <option key={g.value} value={g.value}>{g.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Desil Kesejahteraan</label>
+                  <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
+                    <option value="" disabled hidden>Pilih Desil (1-10)</option>
+                    {DESIL_OPTIONS.map(d => (
+                      <option key={d.value} value={d.value}>{d.label}</option>
+                    ))}
+                  </select>
+                  <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Boleh kosong.</small>
                 </div>
                 <div className="form-group">
                   <label>Tahun Pelajaran (Masuk)</label>
@@ -1807,6 +1897,25 @@ function KelolaAkun() {
                         <option key={grha} value={grha}>{grha}</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Jenis Kelamin</label>
+                    <select value={formData.jenis_kelamin || ''} onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}>
+                      <option value="" disabled hidden>Pilih Jenis Kelamin</option>
+                      {GENDER_OPTIONS.map(g => (
+                        <option key={g.value} value={g.value}>{g.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Desil Kesejahteraan</label>
+                    <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
+                      <option value="" disabled hidden>Pilih Desil (1-10)</option>
+                      {DESIL_OPTIONS.map(d => (
+                        <option key={d.value} value={d.value}>{d.label}</option>
+                      ))}
+                    </select>
+                    <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Boleh kosong.</small>
                   </div>
                   <div className="form-group">
                     <label>Tahun Pelajaran (Masuk)</label>

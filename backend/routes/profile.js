@@ -44,7 +44,7 @@ const upload = multer({
 router.get('/', auth, async (req, res) => {
     try {
         const [user] = await db.query(
-            'SELECT id, nama, nis, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, alamat, no_hp, detail, detail AS jabatan, foto, created_at, tahun_pelajaran, is_graduated, jurusan, must_change_credentials FROM users WHERE id = ?',
+            'SELECT id, nama, nis, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, alamat, no_hp, jenis_kelamin, desil, detail, detail AS jabatan, foto, created_at, tahun_pelajaran, is_graduated, jurusan, must_change_credentials FROM users WHERE id = ?',
             [req.user.id]
         );
 

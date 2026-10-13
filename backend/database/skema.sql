@@ -40,6 +40,8 @@ CREATE TABLE users (
     ipt_awal INTEGER DEFAULT 80,
     alamat TEXT,
     no_hp VARCHAR(20),
+    jenis_kelamin TEXT CHECK (jenis_kelamin IS NULL OR jenis_kelamin IN ('L', 'P')),
+    desil SMALLINT CHECK (desil IS NULL OR (desil >= 1 AND desil <= 10)),
     detail VARCHAR(100),
     foto VARCHAR(255),
     tahun_pelajaran VARCHAR(9) DEFAULT NULL,
