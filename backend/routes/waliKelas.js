@@ -256,7 +256,7 @@ router.get('/my-class', auth, teacherOnly, async (req, res) => {
                 const [allStudents] = await db.query(`
                     SELECT 
                         u.id, u.nama, u.nis, u.username, u.grha, u.ipt_total, u.ipt_awal,
-                        u.alamat, u.no_hp, u.wali_kelas, u.foto, u.created_at, u.tahun_pelajaran, u.jurusan
+                        u.alamat, u.no_hp, u.jenis_kelamin, u.desil, u.wali_kelas, u.foto, u.created_at, u.tahun_pelajaran, u.jurusan
                     FROM users u
                     WHERE u.role = 'siswa' AND (u.is_graduated = 0 OR u.is_graduated IS NULL)
                     ORDER BY u.nama ASC
@@ -359,7 +359,7 @@ router.get('/my-class', auth, teacherOnly, async (req, res) => {
         const [allStudents] = await db.query(`
             SELECT 
                 u.id, u.nama, u.nis, u.username, u.grha, u.ipt_total, u.ipt_awal,
-                u.alamat, u.no_hp, u.wali_kelas, u.foto, u.created_at, u.tahun_pelajaran, u.jurusan
+                u.alamat, u.no_hp, u.jenis_kelamin, u.desil, u.wali_kelas, u.foto, u.created_at, u.tahun_pelajaran, u.jurusan
             FROM users u
             WHERE u.role = 'siswa' AND (u.is_graduated = 0 OR u.is_graduated IS NULL)
             ORDER BY u.nama ASC

@@ -12,6 +12,7 @@ const { gradePrefixFromKelas, getIptAwalForGrade } = require('../utils/iptConfig
 const { syncBiodataChange } = require('../utils/biodataSync');
 const { deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { generateUsername, validateUsernameFormat, isUsernameAvailable } = require('../utils/username');
+const { normalizeGender, normalizeDesil } = require('../utils/studentFields');
 
 // Postgres LIKE is case-sensitive, so all user-facing name/NIS searches must
 // use ILIKE. Multi-word queries are tokenized: every token must appear in the
@@ -270,7 +271,7 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
 
         // If guru/pegawai, only return students (excluding graduated)
         if (req.user.role === 'guru' || req.user.role === 'pegawai') {
-            let query = 'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp FROM users WHERE role = ? AND (is_graduated = 0 OR is_graduated IS NULL)';
+            let query = 'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE role = ? AND (is_graduated = 0 OR is_graduated IS NULL)';
             let params = ['siswa'];
 
             if (search) {
@@ -315,7 +316,7 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
         }
 
         // If superadmin, return all users (including graduated)
-        let query = 'SELECT id, nama, nis, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp FROM users WHERE 1=1';
+        let query = 'SELECT id, nama, nis, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE 1=1';
         let params = [];
 
         // Get filter values from query
@@ -689,7 +690,7 @@ router.get('/:id', auth, async (req, res) => {
         }
 
         const [users] = await db.query(
-            'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
+            'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, jenis_kelamin, desil, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
             [requestedUserId]
         );
         
@@ -726,11 +727,21 @@ router.get('/:id', auth, async (req, res) => {
 // Create student account (Superadmin only other roles have no create access)
 router.post('/create-student', auth, superAdminOnly, async (req, res) => {
     try {
-        const { nama, nis, jurusan, password, wali_kelas, grha, tahun_pelajaran } = req.body;
+        const { nama, nis, jurusan, password, wali_kelas, grha, tahun_pelajaran, jenis_kelamin, desil } = req.body;
 
         // Validate tahun_pelajaran format
         if (!tahun_pelajaran || !validateTahunPelajaran(tahun_pelajaran)) {
             return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
+        }
+
+        // Optional welfare fields (NULL when omitted)
+        let genderValue = null;
+        let desilValue = null;
+        try {
+            genderValue = normalizeGender(jenis_kelamin).value;
+            desilValue = normalizeDesil(desil).value;
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
         }
 
         // Calculate initial class based on enrollment year
@@ -754,8 +765,8 @@ router.post('/create-student', auth, superAdminOnly, async (req, res) => {
 
         const ipt_awal = await getIptAwalForGrade(gradePrefixFromKelas(calculatedClass));
         const [result] = await db.query(
-            'INSERT INTO users (nama, nis, username, password, role, kelas, wali_kelas, grha, jurusan, ipt_total, ipt_awal, tahun_pelajaran) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nama, nis, username, hashedPassword, 'siswa', calculatedClass, wali_kelas, grha, jurusan, ipt_awal, ipt_awal, tahun_pelajaran]
+            'INSERT INTO users (nama, nis, username, password, role, kelas, wali_kelas, grha, jurusan, ipt_total, ipt_awal, tahun_pelajaran, jenis_kelamin, desil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nama, nis, username, hashedPassword, 'siswa', calculatedClass, wali_kelas, grha, jurusan, ipt_awal, ipt_awal, tahun_pelajaran, genderValue, desilValue]
         );
 
         // Create default permissions
@@ -855,7 +866,7 @@ router.put('/:id', auth, async (req, res) => {
             }
         }
 
-        const { nama, nis, nip, jurusan, tahun_pelajaran, alamat, no_hp, jabatan, detail } = req.body;
+        const { nama, nis, nip, jurusan, tahun_pelajaran, alamat, no_hp, jabatan, detail, jenis_kelamin, desil } = req.body;
 
         // Get current user data for logging (dan untuk validasi jabatan)
         const [targetUserData] = await db.query('SELECT nama, nis, role, detail, jurusan, tahun_pelajaran FROM users WHERE id = ?', [userId]);
@@ -902,6 +913,29 @@ router.put('/:id', auth, async (req, res) => {
         }
         if (tahun_pelajaran !== undefined && !validateTahunPelajaran(tahun_pelajaran)) {
             return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
+        }
+        // Welfare fields: siswa-only in practice. They are intentionally NOT
+        // in any EDITABLE_FIELDS set below, so only superadmin (which bypasses
+        // the guard) can change them — never self-edit, never staff.
+        let genderSent = false;
+        let genderValue = null;
+        let desilSent = false;
+        let desilValue = null;
+        if (jenis_kelamin !== undefined) {
+            try {
+                genderValue = normalizeGender(jenis_kelamin).value;
+                genderSent = true;
+            } catch (err) {
+                return res.status(err.statusCode || 400).json({ message: err.message });
+            }
+        }
+        if (desil !== undefined) {
+            try {
+                desilValue = normalizeDesil(desil).value;
+                desilSent = true;
+            } catch (err) {
+                return res.status(err.statusCode || 400).json({ message: err.message });
+            }
         }
 
         let teacherJabatan = jabatan || detail;
@@ -964,6 +998,14 @@ router.put('/:id', auth, async (req, res) => {
         if (no_hp !== undefined) {
             setClauses.push('no_hp = ?');
             setParams.push(no_hp);
+        }
+        if (genderSent) {
+            setClauses.push('jenis_kelamin = ?');
+            setParams.push(genderValue);
+        }
+        if (desilSent) {
+            setClauses.push('desil = ?');
+            setParams.push(desilValue);
         }
         if (jabatan !== undefined || detail !== undefined) {
             setClauses.push('detail = ?');
@@ -1156,11 +1198,11 @@ router.put('/:id/ipt', auth, superAdminOnly, async (req, res) => {
 router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
     try {
         const userId = parseInt(req.params.id);
-        const { nama, nis, jurusan, grha, tahun_pelajaran, nip, jabatan, detail, alamat, no_hp } = req.body;
+        const { nama, nis, jurusan, grha, tahun_pelajaran, nip, jabatan, detail, alamat, no_hp, jenis_kelamin, desil } = req.body;
         const teacherJabatan = jabatan || detail;
 
         // Get user current data
-        const [user] = await db.query('SELECT nama, role, detail, nis, nip, alamat, no_hp FROM users WHERE id = ?', [userId]);
+        const [user] = await db.query('SELECT nama, role, detail, nis, nip, alamat, no_hp, jenis_kelamin, desil FROM users WHERE id = ?', [userId]);
         if (user.length === 0) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -1183,13 +1225,29 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
                 return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
             }
 
+            // Welfare fields are superadmin-only (official DTSEN data):
+            // staff editing siswa targets must not send them at all.
+            let newGender = user[0].jenis_kelamin ?? null;
+            let newDesil = user[0].desil ?? null;
+            if (jenis_kelamin !== undefined || desil !== undefined) {
+                if (req.user.role !== 'superadmin') {
+                    return res.status(403).json({ message: 'Hanya superadmin yang dapat mengubah jenis kelamin/desil' });
+                }
+                try {
+                    if (jenis_kelamin !== undefined) newGender = normalizeGender(jenis_kelamin).value;
+                    if (desil !== undefined) newDesil = normalizeDesil(desil).value;
+                } catch (err) {
+                    return res.status(err.statusCode || 400).json({ message: err.message });
+                }
+            }
+
             // Calculate new class based on updated jurusan and tahun_pelajaran
             const calculatedClass = calculateFullClass(tahun_pelajaran, jurusan);
 
             // Update siswa biodata
             await db.query(
-                'UPDATE users SET nama = ?, nis = ?, jurusan = ?, grha = ?, tahun_pelajaran = ?, kelas = ? WHERE id = ?',
-                [nama, nis, jurusan, grha, tahun_pelajaran, calculatedClass, userId]
+                'UPDATE users SET nama = ?, nis = ?, jurusan = ?, grha = ?, tahun_pelajaran = ?, kelas = ?, jenis_kelamin = ?, desil = ? WHERE id = ?',
+                [nama, nis, jurusan, grha, tahun_pelajaran, calculatedClass, newGender, newDesil, userId]
             );
 
             // Propagate the edited biodata into record snapshots, logs, notifications.

@@ -193,6 +193,8 @@ router.get('/class-ipt/:kelas', auth, async (req, res) => {
                 nis,
                 kelas,
                 grha,
+                jenis_kelamin,
+                desil,
                 ipt_total,
                 ipt_awal,
                 tahun_pelajaran,
@@ -589,7 +591,7 @@ router.get('/leger-pdf/:kelas', auth, async (req, res) => {
 
         // Get all students in the class with their IPT breakdown
         const [students] = await db.query(
-            `SELECT id, nama, nis, kelas, grha, ipt_total, ipt_awal, tahun_pelajaran, jurusan
+            `SELECT id, nama, nis, kelas, grha, jenis_kelamin, desil, ipt_total, ipt_awal, tahun_pelajaran, jurusan
              FROM users 
              WHERE role = 'siswa' AND kelas = ? AND (is_graduated = 0 OR is_graduated IS NULL)
              ORDER BY nama ASC`,
@@ -723,7 +725,7 @@ router.get('/leger-preview/:kelas', auth, async (req, res) => {
 
         // Get all students in the class with their IPT breakdown
         const [students] = await db.query(
-            `SELECT id, nama, nis, kelas, grha, ipt_total, ipt_awal, tahun_pelajaran, jurusan
+            `SELECT id, nama, nis, kelas, grha, jenis_kelamin, desil, ipt_total, ipt_awal, tahun_pelajaran, jurusan
              FROM users 
              WHERE role = 'siswa' AND kelas = ? AND (is_graduated = 0 OR is_graduated IS NULL)
              ORDER BY nama ASC`,
