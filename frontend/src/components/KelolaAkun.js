@@ -94,9 +94,7 @@ function KelolaAkun() {
   const [excludedCols, setExcludedCols] = useState(new Set(['id']));
   const [exporting, setExporting] = useState(false);
   const [showEditBiodataModal, setShowEditBiodataModal] = useState(false);
-  // Error from the last edit-biodata save, shown inside the modal directly
-  // above the submit button (the page-top alert is out of view while editing).
-  const [editBiodataError, setEditBiodataError] = useState('');
+  const [editError, setEditError] = useState('');
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
@@ -405,6 +403,7 @@ function KelolaAkun() {
 
   const handleEditUser = (user) => {
     setEditStudent(user);
+    setEditError('');
     if (user.role === 'siswa') {
       setFormData({
         nama: user.nama,
@@ -426,12 +425,11 @@ function KelolaAkun() {
       });
     }
     setShowEditBiodataModal(true);
-    setEditBiodataError('');
   };
 
   const handleUpdateUser = async (e) => {
     e.preventDefault();
-    setEditBiodataError('');
+    setEditError('');
     try {
       // Superadmin may also rename the account: applied first so a failed
       // rename aborts before biodata is touched.
@@ -447,10 +445,10 @@ function KelolaAkun() {
       setShowEditBiodataModal(false);
       setEditStudent(null);
       setFormData({});
-      setEditBiodataError('');
+      setEditError('');
       fetchUsers(pagination.page);
     } catch (error) {
-      setEditBiodataError(error.response?.data?.message || 'Gagal update data');
+      setEditError(error.response?.data?.message || 'Gagal update data');
     }
   };
 
@@ -1866,7 +1864,7 @@ function KelolaAkun() {
         }}>
           <div className="card" style={{ width: 500, maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3>Edit Data {editStudent?.role === 'siswa' ? 'Siswa' : 'Guru'}</h3>
-            <button className="btn btn-danger" onClick={() => { setShowEditBiodataModal(false); setEditStudent(null); setFormData({}); setEditBiodataError(''); }} style={{ marginBottom: '10px' }}>Tutup</button>
+            <button className="btn btn-danger" onClick={() => { setShowEditBiodataModal(false); setEditStudent(null); setFormData({}); setEditError(''); }} style={{ marginBottom: '10px' }}>Tutup</button>
 
             <form onSubmit={handleUpdateUser}>
               <div className="form-group">
@@ -1971,6 +1969,9 @@ function KelolaAkun() {
                     <input type="text" value={formData.no_hp || ''} onChange={(e) => setFormData({...formData, no_hp: e.target.value})} />
                   </div>
                 </>
+              )}
+              {editError && (
+                <div className="alert alert-danger" style={{ fontSize: '12px', marginBottom: '8px' }}>{editError}</div>
               )}
               <button type="submit" className="btn btn-primary">Update Data</button>
             </form>
