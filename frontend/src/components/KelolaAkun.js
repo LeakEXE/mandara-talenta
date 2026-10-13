@@ -40,7 +40,7 @@ const EXPORT_COLUMNS = [
   { key: 'jurusan', header: 'Jurusan', width: 10 },
   { key: 'grha', header: 'Grha', width: 12 },
   { key: 'jenis_kelamin', header: 'L/P', width: 8 },
-  { key: 'desil', header: 'Desil', width: 8 },
+  { key: 'desil', header: 'Desil', width: 14 },
   { key: 'tahun_pelajaran', header: 'Tahun Pelajaran', width: 16 },
   { key: 'no_hp', header: 'No HP', width: 16 },
   { key: 'alamat', header: 'Alamat', width: 25 },
@@ -94,6 +94,9 @@ function KelolaAkun() {
   const [excludedCols, setExcludedCols] = useState(new Set(['id']));
   const [exporting, setExporting] = useState(false);
   const [showEditBiodataModal, setShowEditBiodataModal] = useState(false);
+  // Error from the last edit-biodata save, shown inside the modal directly
+  // above the submit button (the page-top alert is out of view while editing).
+  const [editBiodataError, setEditBiodataError] = useState('');
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 50,
@@ -423,10 +426,12 @@ function KelolaAkun() {
       });
     }
     setShowEditBiodataModal(true);
+    setEditBiodataError('');
   };
 
   const handleUpdateUser = async (e) => {
     e.preventDefault();
+    setEditBiodataError('');
     try {
       // Superadmin may also rename the account: applied first so a failed
       // rename aborts before biodata is touched.
@@ -442,9 +447,10 @@ function KelolaAkun() {
       setShowEditBiodataModal(false);
       setEditStudent(null);
       setFormData({});
+      setEditBiodataError('');
       fetchUsers(pagination.page);
     } catch (error) {
-      setMessage(error.response?.data?.message || 'Gagal update data');
+      setEditBiodataError(error.response?.data?.message || 'Gagal update data');
     }
   };
 
@@ -510,6 +516,9 @@ function KelolaAkun() {
             // Optional welfare fields (server re-validates; empty = unknown)
             const jenisKelaminRaw = getRowField(row, 'jenis_kelamin', 'Jenis Kelamin', 'JenisKelamin', 'Gender', 'JK', 'L/P');
             const desilRaw = getRowField(row, 'desil', 'Desil');
+            // 'Tidak terdata' (atau '-') = eksplisit unknown -> NULL (menimpa nilai lama).
+            // Sel kosong = lewati (pertahankan nilai lama).
+            const desilClear = /^(tidak terdata|-)$/i.test(desilRaw.trim());
             if (jenisKelaminRaw && !['L', 'P'].includes(jenisKelaminRaw.trim().toUpperCase())) {
               results.push({
                 status: 'error',
@@ -518,7 +527,7 @@ function KelolaAkun() {
               });
               continue;
             }
-            if (desilRaw && !/^(10|[1-9])$/.test(desilRaw.trim())) {
+            if (desilRaw && !desilClear && !/^(10|[1-9])$/.test(desilRaw.trim())) {
               results.push({
                 status: 'error',
                 name: nama,
@@ -568,7 +577,7 @@ function KelolaAkun() {
               grha: normalizeGrha(getRowField(row, 'grha', 'Grha', 'Gra', 'GRHA')) || 'Airsanya',
               tahun_pelajaran: tahunPelajaran,
               jenis_kelamin: jenisKelaminRaw,
-              desil: desilRaw,
+              desil: desilClear ? null : desilRaw,
               password: getRowField(row, 'password', 'Password') || '123456'
             };
 
@@ -664,6 +673,9 @@ function KelolaAkun() {
       const formatCellValue = (user, key) => {
         if (key === 'is_graduated') {
           return user.is_graduated ? 'Lulus' : 'Aktif';
+        }
+        if (key === 'desil') {
+          return user.desil ?? 'Tidak terdata';
         }
         if (key === 'created_at') {
           if (!user.created_at) return '';
@@ -807,7 +819,7 @@ function KelolaAkun() {
           TahunPelajaran: 'Tahun pelajaran siswa tersebut masuk sekolah. Format YYYY-YYYY, contoh: 2026-2027.',
           Password: 'Password awal akun (min. 6 karakter). User wajib menggantinya saat login pertama.',
           JenisKelamin: "Jenis kelamin siswa: 'L' (Laki-laki) atau 'P' (Perempuan). Boleh kosong.",
-          Desil: 'Desil kesejahteraan keluarga 1-10 (1 = sangat miskin, 10 = sangat kaya). Boleh kosong.'
+          Desil: 'Desil kesejahteraan keluarga 1-10 (1 = sangat miskin, 10 = sangat kaya). Kosongkan atau tulis "Tidak terdata" bila belum ada data.'
         }
       });
 
@@ -1207,7 +1219,7 @@ function KelolaAkun() {
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '100px' }}>Kelas</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '90px' }}>Grha</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '50px' }}>L/P</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '60px' }}>Desil</th>
+                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '110px' }}>Desil</th>
                 {userRole === 'superadmin' && (
                   <>
                     <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '100px' }}>Jurusan</th>
@@ -1274,7 +1286,7 @@ function KelolaAkun() {
                     {user.jenis_kelamin || '-'}
                   </td>
                   <td style={{ padding: '10px 12px', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
-                    {user.desil ?? '-'}
+                    {user.desil ?? 'Tidak terdata'}
                   </td>
                   {userRole === 'superadmin' && (
                     <>
@@ -1532,12 +1544,12 @@ function KelolaAkun() {
                 <div className="form-group">
                   <label>Desil Kesejahteraan</label>
                   <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
-                    <option value="" disabled hidden>Pilih Desil (1-10)</option>
+                    <option value="">Tidak terdata</option>
                     {DESIL_OPTIONS.map(d => (
                       <option key={d.value} value={d.value}>{d.label}</option>
                     ))}
                   </select>
-                  <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Boleh kosong.</small>
+                  <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
                 </div>
                 <div className="form-group">
                   <label>Tahun Pelajaran (Masuk)</label>
@@ -1654,6 +1666,7 @@ function KelolaAkun() {
                 <div className="form-group">
                   <label>NIP</label>
                   <input type="text" value={formData.nip || ''} onChange={(e) => setFormData({...formData, nip: e.target.value})} required />
+                  <small style={{ color: '#666', fontSize: '12px' }}>Isi - jika tidak memiliki NIP</small>
                 </div>
                 <div className="form-group">
                   <label>Jabatan</label>
@@ -1853,7 +1866,7 @@ function KelolaAkun() {
         }}>
           <div className="card" style={{ width: 500, maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3>Edit Data {editStudent?.role === 'siswa' ? 'Siswa' : 'Guru'}</h3>
-            <button className="btn btn-danger" onClick={() => { setShowEditBiodataModal(false); setEditStudent(null); setFormData({}); }} style={{ marginBottom: '10px' }}>Tutup</button>
+            <button className="btn btn-danger" onClick={() => { setShowEditBiodataModal(false); setEditStudent(null); setFormData({}); setEditBiodataError(''); }} style={{ marginBottom: '10px' }}>Tutup</button>
 
             <form onSubmit={handleUpdateUser}>
               <div className="form-group">
@@ -1910,12 +1923,12 @@ function KelolaAkun() {
                   <div className="form-group">
                     <label>Desil Kesejahteraan</label>
                     <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
-                      <option value="" disabled hidden>Pilih Desil (1-10)</option>
+                      <option value="">Tidak terdata</option>
                       {DESIL_OPTIONS.map(d => (
                         <option key={d.value} value={d.value}>{d.label}</option>
                       ))}
                     </select>
-                    <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Boleh kosong.</small>
+                    <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
                   </div>
                   <div className="form-group">
                     <label>Tahun Pelajaran (Masuk)</label>
@@ -1939,6 +1952,7 @@ function KelolaAkun() {
                   <div className="form-group">
                     <label>NIP</label>
                     <input type="text" value={formData.nip || ''} onChange={(e) => setFormData({...formData, nip: e.target.value})} required />
+                    <small style={{ color: '#666', fontSize: '12px' }}>Isi - jika tidak memiliki NIP</small>
                   </div>
                   <div className="form-group">
                     <label>Jabatan</label>

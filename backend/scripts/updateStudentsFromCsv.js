@@ -16,6 +16,8 @@
 //   nis,jenis_kelamin,desil,no_hp
 //   1540,L,3,08123456789
 // Empty cell = leave the stored value unchanged (never cleared).
+// Menulis 'Tidak terdata' (atau '-') pada kolom desil = eksplisit unknown:
+// menimpa nilai lama menjadi NULL.
 // Accepts 'Jenis Kelamin'/'Desil'/... header aliases like KelolaAkun import.
 const path = require('path');
 const fs = require('fs');
@@ -168,6 +170,13 @@ async function main(argv) {
         for (const [i, col] of colIdx) {
             const raw = rows[r][i] === undefined ? '' : String(rows[r][i]).trim();
             if (raw === '') continue; // empty = leave unchanged
+            // 'Tidak terdata' (atau '-') pada kolom desil = eksplisit unknown:
+            // timpa nilai lama menjadi NULL (beda dengan sel kosong).
+            if (col === 'desil' && /^(tidak terdata|-)$/i.test(raw)) {
+                sets.push('desil = ?');
+                params.push(null);
+                continue;
+            }
             try {
                 if (col === 'jenis_kelamin') {
                     sets.push('jenis_kelamin = ?');
