@@ -124,7 +124,7 @@ DROP TABLE IF EXISTS ipt_config CASCADE;
 CREATE TABLE ipt_config (
     id SERIAL PRIMARY KEY,
     category VARCHAR(50) NOT NULL,
-    field1 VARCHAR(100) DEFAULT NULL,
+    field1 VARCHAR(200) DEFAULT NULL,
     field2 VARCHAR(100) DEFAULT NULL,
     field3 VARCHAR(100) DEFAULT NULL,
     point_value INTEGER NOT NULL,
@@ -274,7 +274,7 @@ CREATE TABLE pelanggaran (
     grha VARCHAR(50),
     keterangan TEXT NOT NULL,
     foto VARCHAR(255),
-    jenis_pelanggaran VARCHAR(100) NOT NULL,
+    jenis_pelanggaran VARCHAR(200) NOT NULL,
     point_dikurangi INTEGER NOT NULL,
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
     rejection_reason TEXT,
