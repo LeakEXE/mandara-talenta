@@ -2,6 +2,15 @@ const express = require('express');
 const router = express.Router();
 const VALID_TEACHER_JABATAN = ['Guru', 'Pegawai'];
 const VALID_JURUSAN = ['TKJ 1', 'TKJ 2', 'DPIB 1', 'DPIB 2', 'TKR 1', 'TKR 2'];
+
+// "-" (or blank) marks staff without a NIP and is stored as NULL so any
+// number of accounts can share it without tripping the UNIQUE constraint.
+// Real NIP values pass through untouched.
+function normalizeNip(value) {
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    return (s === '' || s === '-') ? null : value;
+}
 const bcrypt = require('bcryptjs');
 const { auth, superAdminOnly, teacherOrSuperAdmin } = require('../middleware/auth');
 const db = require('../config/database');
@@ -803,15 +812,18 @@ router.post('/create-teacher', auth, superAdminOnly, async (req, res) => {
             return res.status(400).json({ message: `Jabatan tidak valid. Gunakan: ${VALID_TEACHER_JABATAN.join(', ')}` });
         }
 
-        // Check for duplicate ("-" is the placeholder for staff without a
-        // NIP and may be shared by any number of accounts)
-        const [existing] = await db.query(
-            'SELECT id FROM users WHERE nip = ?',
-            [nip]
-        );
+        // Check for duplicate (null = no NIP, shared freely by any
+        // number of accounts; only real NIP values must be unique)
+        const newNip = normalizeNip(nip);
+        if (newNip !== null) {
+            const [existing] = await db.query(
+                'SELECT id FROM users WHERE nip = ?',
+                [newNip]
+            );
 
-        if (existing.length > 0 && nip !== '-') {
-            return res.status(400).json({ message: 'NIP already exists' });
+            if (existing.length > 0) {
+                return res.status(400).json({ message: 'NIP already exists' });
+            }
         }
 
         const hashedPassword = bcrypt.hashSync(password, 10);
@@ -821,11 +833,11 @@ router.post('/create-teacher', auth, superAdminOnly, async (req, res) => {
 
         // Auto-generate a username from the name (no random suffix; NIP feeds
         // the deterministic duplicate suffix, user changes it on first login)
-        const username = await generateUsername(nama, { nip });
+        const username = await generateUsername(nama, { nip: newNip });
 
         const [result] = await db.query(
             'INSERT INTO users (nama, nip, username, password, role, detail, alamat, no_hp, wali_kelas, ipt_total, ipt_awal) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nama, nip, username, hashedPassword, userRole, teacherJabatan, alamat, no_hp, wali_kelas, 0, 0]
+            [nama, newNip, username, hashedPassword, userRole, teacherJabatan, alamat, no_hp, wali_kelas, 0, 0]
         );
 
         // Create default permissions
@@ -891,18 +903,21 @@ router.put('/:id', auth, async (req, res) => {
             }
         }
 
-        // Uniqueness checks (exclude self)
+        // Uniqueness checks (exclude self). NIP normalizes first: null
+        // (from "-" / blank = no NIP) is shared freely, only real values
+        // must be unique.
+        const newNip = nip === undefined ? undefined : normalizeNip(nip);
         if (nis !== undefined && nis !== oldNis) {
             const [dup] = await db.query('SELECT id FROM users WHERE nis = ? AND id <> ?', [nis, userId]);
             if (dup.length > 0) {
                 return res.status(400).json({ message: 'NIS sudah dipakai akun lain' });
             }
         }
-        if (nip !== undefined) {
+        if (newNip !== undefined) {
             const [targetNip] = await db.query('SELECT nip FROM users WHERE id = ?', [userId]);
-            // "-" marks staff without a NIP and is exempt from uniqueness
-            if (nip !== targetNip[0]?.nip && nip !== '-') {
-                const [dup] = await db.query('SELECT id FROM users WHERE nip = ? AND id <> ?', [nip, userId]);
+            const oldNip = targetNip[0]?.nip ?? null;
+            if (newNip !== oldNip && newNip !== null) {
+                const [dup] = await db.query('SELECT id FROM users WHERE nip = ? AND id <> ?', [newNip, userId]);
                 if (dup.length > 0) {
                     return res.status(400).json({ message: 'NIP sudah dipakai akun lain' });
                 }
@@ -970,7 +985,7 @@ router.put('/:id', auth, async (req, res) => {
         }
         if (nip !== undefined) {
             setClauses.push('nip = ?');
-            setParams.push(nip);
+            setParams.push(newNip);
         }
         if (jurusan !== undefined) {
             setClauses.push('jurusan = ?');
@@ -1244,6 +1259,15 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
             // Calculate new class based on updated jurusan and tahun_pelajaran
             const calculatedClass = calculateFullClass(tahun_pelajaran, jurusan);
 
+            // NIS must stay unique (exclude self) — without this the UPDATE
+            // below fails on the DB constraint with a bare 500.
+            if (nis !== undefined && nis !== oldNis) {
+                const [dup] = await db.query('SELECT id FROM users WHERE nis = ? AND id <> ?', [nis, userId]);
+                if (dup.length > 0) {
+                    return res.status(400).json({ message: 'NIS sudah dipakai akun lain' });
+                }
+            }
+
             // Update siswa biodata
             await db.query(
                 'UPDATE users SET nama = ?, nis = ?, jurusan = ?, grha = ?, tahun_pelajaran = ?, kelas = ?, jenis_kelamin = ?, desil = ? WHERE id = ?',
@@ -1265,6 +1289,16 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
             // Update guru biodata (preserve alamat/no_hp when the form does not send them)
             const newAlamat = alamat !== undefined ? alamat : user[0].alamat;
             const newNoHp = no_hp !== undefined ? no_hp : user[0].no_hp;
+            // NIP normalizes like everywhere else ("-"/blank = no NIP, stored
+            // as NULL) and must stay unique — without this the UPDATE below
+            // fails on the DB constraint with a bare 500.
+            const newNip = nip === undefined ? (oldNip ?? null) : normalizeNip(nip);
+            if (newNip !== (oldNip ?? null) && newNip !== null) {
+                const [dup] = await db.query('SELECT id FROM users WHERE nip = ? AND id <> ?', [newNip, userId]);
+                if (dup.length > 0) {
+                    return res.status(400).json({ message: 'NIP sudah dipakai akun lain' });
+                }
+            }
             // Keep role in sync with jabatan so role-based pages (e.g. /izin-akun)
             // don't show a stale role after a Guru <-> Pegawai change.
             let newRole = role;
@@ -1275,7 +1309,7 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
             }
             await db.query(
                 'UPDATE users SET nama = ?, nip = ?, detail = ?, alamat = ?, no_hp = ?, role = ? WHERE id = ?',
-                [nama, nip, newJabatan, newAlamat, newNoHp, newRole, userId]
+                [nama, newNip, newJabatan, newAlamat, newNoHp, newRole, userId]
             );
 
             // Propagate the renamed teacher into pembina names, logs, notifications.

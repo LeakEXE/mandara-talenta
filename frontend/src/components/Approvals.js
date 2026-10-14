@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
-import { formatDisplayText } from '../utils/formatDisplayText';
+import { formatDisplayText, formatTanggalLomba } from '../utils/formatDisplayText';
 import { StatusIcon } from './icons';
 import { Camera, Inbox } from 'lucide-react';
 import { EvidenceViewer, EvidenceFileThumb, isPdfPath } from './EvidenceViewer';
@@ -207,7 +207,7 @@ function Approvals() {
     }
 
     const columns = {
-      prestasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Lomba', 'Jenis Lomba', 'Kategori Lomba', 'Juara', 'Kategori', 'Foto', 'Status', 'Aksi'],
+      prestasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Lomba', 'Tgl Lomba', 'Jenis Lomba', 'Kategori Lomba', 'Juara', 'Kategori', 'Foto', 'Status', 'Aksi'],
       event: ['Diajukan Oleh', 'Nama', 'NIS', 'Event', 'Tingkat', 'Foto', 'Status', 'Aksi'],
       organisasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Organisasi', 'Jabatan', 'Foto', 'Status', 'Aksi'],
       kepanitiaan: ['Diajukan Oleh', 'Nama', 'NIS', 'Kepanitiaan', 'Jabatan', 'Foto', 'Status', 'Aksi'],
@@ -281,6 +281,7 @@ function Approvals() {
     const getFieldValue = (item, col, type) => {
       if (type === 'prestasi') {
         if (col === 'Lomba') return item.nama_lomba;
+        if (col === 'Tgl Lomba') return formatTanggalLomba(item.tanggal_pelaksanaan);
         if (col === 'Jenis Lomba') return formatDisplayText(item.jenis_lomba || 'akademik');
         if (col === 'Kategori Lomba') return formatDisplayText(item.kategori_lomba || 'individu');
         if (col === 'Juara') return formatDisplayText(item.juara);
@@ -538,6 +539,7 @@ function Approvals() {
           }
         `}</style>
 
+        <div style={{ overflowX: 'auto', width: '100%' }}>
         <table className="desktop-table" style={{
           width: "100%",
           borderCollapse: "collapse",
@@ -598,6 +600,13 @@ function Approvals() {
                       verticalAlign: "middle",
                       color: TEXT
                     }}>{item.nama_lomba}</td>
+                    <td style={{
+                      padding: "16px 18px",
+                      borderBottom: `1px solid ${BORDER}`,
+                      verticalAlign: "middle",
+                      color: TEXT,
+                      whiteSpace: "nowrap"
+                    }}>{formatTanggalLomba(item.tanggal_pelaksanaan)}</td>
                     <td style={{
                       padding: "16px 18px",
                       borderBottom: `1px solid ${BORDER}`,
@@ -843,6 +852,7 @@ function Approvals() {
             ))}
           </tbody>
         </table>
+        </div>
 
         <div className="mobile-cards">
           {displayData.map(item => renderMobileCard(item))}

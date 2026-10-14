@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { getRecordPhotoUrl } from '../utils/recordPhoto';
-import { formatDisplayText } from '../utils/formatDisplayText';
+import { formatDisplayText, formatTanggalLomba } from '../utils/formatDisplayText';
 import { EvidenceViewer } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
 import { User, Paperclip } from 'lucide-react';
@@ -118,6 +118,10 @@ function PembinaRecordModal({ teacher, totalPoint, onClose }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '.82rem', padding: '5px 0', borderTop: '1px solid #f1f5f9' }}>
                         <span style={{ color: '#64748b' }}>Juara / Kategori</span>
                         <span style={{ color: '#0f172a', fontWeight: 600, textAlign: 'right' }}>{formatDisplayText(first.juara)} · {formatDisplayText(first.kategori)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '.82rem', padding: '5px 0', borderTop: '1px solid #f1f5f9' }}>
+                        <span style={{ color: '#64748b' }}>Tgl Pelaksanaan</span>
+                        <span style={{ color: '#0f172a', fontWeight: 600 }}>{formatTanggalLomba(first.tanggal_pelaksanaan)}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '.82rem', padding: '5px 0', borderTop: '1px solid #f1f5f9' }}>
                         <span style={{ color: '#64748b' }}>Tanggal</span>

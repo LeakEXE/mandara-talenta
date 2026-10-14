@@ -14,6 +14,7 @@ const {
     calculatePelanggaranPoints
 } = require('../constants/points');
 const { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
+const { normalizeTanggalPelaksanaan } = require('../utils/prestasiFields');
 const {
     getApprovalStatusColumn,
     getRowApprovalStatus,
@@ -161,6 +162,12 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
     try {
         const userRole = req.user.role;
         const { nama, nis, nama_lomba, pembina, pembina_id, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
+        let tanggalPelaksanaan = null;
+        try {
+            tanggalPelaksanaan = normalizeTanggalPelaksanaan(req.body.tanggal_pelaksanaan);
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
         // Kelompok carries its members in `anggota` (validated below); individu
         // must name a real student up front (empty NIS used to self-file).
         if (kategori_lomba === 'kelompok') {
@@ -242,9 +249,9 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                 for (const m of members) {
                     const [result] = await conn.query(
                         `INSERT INTO prestasi
-                        (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, sharedFotoPath, point]
+                        (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto, point, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
+                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, sharedFotoPath, point]
                     );
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
                     await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query, { type: 'prestasi', id: result.insertId });
@@ -273,9 +280,9 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         for (const m of members) {
             const [result] = await db.query(
                 `INSERT INTO prestasi_approvals
-                (user_id, submitted_by, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [m.id, req.user.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, fotoPath]
+                (user_id, submitted_by, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [m.id, req.user.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, fotoPath]
             );
             await setPembinaLinks(db.query, 'prestasi_approval_pembina', 'approval_id', result.insertId, mentorIds);
             insertedIds.push(result.insertId);
@@ -734,7 +741,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             case 'prestasi':
                 table = 'prestasi_approvals';
                 pointField = 'juara';
-                allowedColumns = ['id', 'user_id', 'submitted_by', 'nama', 'nis', 'nama_lomba', 'foto', 'kelas', 'pembina', 'pembina_id', 'grha', 'juara', 'kategori', 'jenis_lomba', 'kategori_lomba', 'grup_lomba', 'superadmin_status', 'created_at'];
+                allowedColumns = ['id', 'user_id', 'submitted_by', 'nama', 'nis', 'nama_lomba', 'foto', 'kelas', 'pembina', 'pembina_id', 'grha', 'juara', 'kategori', 'jenis_lomba', 'kategori_lomba', 'grup_lomba', 'tanggal_pelaksanaan', 'superadmin_status', 'created_at'];
                 break;
             case 'event':
                 table = 'event_approvals';
@@ -852,8 +859,8 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             // Insert to actual table
             let insertQuery, insertParams;
             if (type === 'prestasi') {
-                insertQuery = `INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`;
-                insertParams = [data.user_id, data.nama || 'Unknown', data.nis || '', data.nama_lomba || '', data.kelas || '', data.pembina || '', data.pembina_id || null, data.grha || '', data.juara || '', data.kategori || '', data.jenis_lomba || 'akademik', data.kategori_lomba || 'individu', data.grup_lomba || null, finalFotoPath || null, pointChange];
+                insertQuery = `INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`;
+                insertParams = [data.user_id, data.nama || 'Unknown', data.nis || '', data.nama_lomba || '', data.kelas || '', data.pembina || '', data.pembina_id || null, data.grha || '', data.juara || '', data.kategori || '', data.jenis_lomba || 'akademik', data.kategori_lomba || 'individu', data.grup_lomba || null, data.tanggal_pelaksanaan || null, finalFotoPath || null, pointChange];
             } else if (type === 'event') {
                 insertQuery = `INSERT INTO event (user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`;
                 insertParams = [data.user_id, data.nama || 'Unknown', data.nis || '', data.kelas || '', data.grha || '', data.nama_event || '', data.tingkat || '', finalFotoPath || null, pointChange];
@@ -971,7 +978,7 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
     try {
         // Define allowed columns for each table type
         const tableColumns = {
-            'prestasi': ['id', 'user_id', 'nama', 'nis', 'jenis', 'nama_lomba', 'foto', 'kelas', 'pembina', 'grha', 'juara', 'kategori', 'point', 'status', 'rejection_reason', 'created_at'],
+            'prestasi': ['id', 'user_id', 'nama', 'nis', 'jenis', 'nama_lomba', 'foto', 'kelas', 'pembina', 'grha', 'juara', 'kategori', 'tanggal_pelaksanaan', 'point', 'status', 'rejection_reason', 'created_at'],
             'event': ['id', 'user_id', 'nama', 'nis', 'kelas', 'grha', 'pembina', 'nama_event', 'tingkat', 'foto', 'point', 'status', 'rejection_reason', 'created_at'],
             'organisasi': ['id', 'user_id', 'nama', 'nis', 'kelas', 'grha', 'jabatan_organisasi', 'foto', 'kategori_organisasi', 'point', 'status', 'rejection_reason', 'created_at'],
             'kepanitiaan': ['id', 'user_id', 'nama', 'nis', 'kelas', 'grha', 'jabatan_kepanitiaan', 'foto', 'point', 'status', 'rejection_reason', 'created_at'],

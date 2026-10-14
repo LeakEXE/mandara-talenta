@@ -1,6 +1,11 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+// DATE (OID 1082) has no time component: keep the 'YYYY-MM-DD' string
+// instead of pg's default local-midnight Date, which shifts a day back
+// when serialized to UTC on +07/+08 servers (e.g. tanggal_pelaksanaan).
+types.setTypeParser(1082, (v) => v);
 
 // Support both DATABASE_URL and individual DB_* vars.
 // Defaults are PostgreSQL-oriented (previous MySQL defaults root/3306 no longer apply).
