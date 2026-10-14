@@ -539,6 +539,7 @@ function Approvals() {
           }
         `}</style>
 
+        <div style={{ overflowX: 'auto', width: '100%' }}>
         <table className="desktop-table" style={{
           width: "100%",
           borderCollapse: "collapse",
@@ -851,6 +852,7 @@ function Approvals() {
             ))}
           </tbody>
         </table>
+        </div>
 
         <div className="mobile-cards">
           {displayData.map(item => renderMobileCard(item))}
