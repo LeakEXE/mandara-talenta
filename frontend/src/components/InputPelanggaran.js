@@ -4,6 +4,7 @@ import EditModal from './EditModal';
 import useEditModal from '../hooks/useEditModal';
 import API_BASE_URL from '../config';
 import Select from 'react-select';
+import StudentSelect from './StudentSelect';
 import { StatusIcon } from './icons';
 import { ClipboardList } from 'lucide-react';
 import { validateEvidenceFile } from '../utils/evidence';
@@ -583,74 +584,13 @@ function InputPelanggaran() {
       {/* Input Form - Show for non-superadmin or when showForm is true */}
       {((userRole !== 'superadmin' && !canApprove) || showForm) && (
         <form onSubmit={handleSubmit}>
-        <div className="form-grid-2">
-          <div className="form-group">
-            <label>Nama <span className="required">*</span></label>
-            {userRole === 'siswa' ? (
-              <input
-                type="text"
-                value={formData.nama}
-                disabled
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d0d0d0',
-                  borderRadius: '4px',
-                  backgroundColor: '#f5f5f5',
-                  color: '#666'
-                }}
-              />
-            ) : (
-              <Select
-                value={students.find(s => s.nama === formData.nama && s.nis === formData.nis) ? { value: formData.nama, label: formData.nama, nama: formData.nama, nis: formData.nis, kelas: formData.kelas, grha: formData.grha } : null}
-                onChange={(selected) => handleStudentSelect(selected)}
-                options={students.map(student => ({ value: student.nama, label: `${student.nama} (${student.nis})`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
-                placeholder="Cari nama siswa..."
-                isSearchable
-                isClearable
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: '40px'
-                  })
-                }}
-              />
-            )}
-          </div>
-          <div className="form-group">
-            <label>NIS <span className="required">*</span></label>
-            {userRole === 'siswa' ? (
-              <input
-                type="text"
-                value={formData.nis}
-                disabled
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  border: '1px solid #d0d0d0',
-                  borderRadius: '4px',
-                  backgroundColor: '#f5f5f5',
-                  color: '#666'
-                }}
-              />
-            ) : (
-              <Select
-                value={students.find(s => s.nis === formData.nis) ? { value: formData.nis, label: formData.nis, nama: formData.nama, nis: formData.nis, kelas: formData.kelas, grha: formData.grha } : null}
-                onChange={(selected) => handleStudentSelect(selected)}
-                options={students.map(student => ({ value: student.nis, label: `${student.nis} - ${student.nama}`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
-                placeholder="Cari NIS siswa..."
-                isSearchable
-                isClearable
-                styles={{
-                  control: (provided) => ({
-                    ...provided,
-                    minHeight: '40px'
-                  })
-                }}
-              />
-            )}
-          </div>
-        </div>
+        <StudentSelect
+          students={students}
+          nama={formData.nama}
+          nis={formData.nis}
+          onSelect={handleStudentSelect}
+          isSiswa={userRole === 'siswa'}
+        />
 
         <div className="form-grid-2">
           <div className="form-group">
