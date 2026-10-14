@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { parseKarakterSiswa, toTitleCase } from '../utils/perilaku';
 import StudentSelect from './StudentSelect';
+import FilterBar from './FilterBar';
 import EditModal from './EditModal';
 import useEditModal from '../hooks/useEditModal';
 import { StatusIcon } from './icons';
@@ -28,6 +29,9 @@ function InputPerilaku() {
   const [allPerilaku, setAllPerilaku] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
+  const [indexStatus, setIndexStatus] = useState('semua');
+  const [indexDateFrom, setIndexDateFrom] = useState('');
+  const [indexDateTo, setIndexDateTo] = useState('');
   const [selectedIndexIds, setSelectedIndexIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [userRole, setUserRole] = useState('');
@@ -335,10 +339,24 @@ function InputPerilaku() {
     }
   };
 
+  const resetIndexFilters = () => {
+    setIndexSearch('');
+    setIndexStatus('semua');
+    setIndexDateFrom('');
+    setIndexDateTo('');
+  };
+
   const filteredPerilaku = allPerilaku.filter((item) => {
+    if (indexStatus !== 'semua' && item.status !== indexStatus) return false;
+    if (indexDateFrom || indexDateTo) {
+      const d = item.created_at ? String(item.created_at).slice(0, 10) : '';
+      if (!d) return false;
+      if (indexDateFrom && d < indexDateFrom) return false;
+      if (indexDateTo && d > indexDateTo) return false;
+    }
     const q = indexSearch.trim().toLowerCase();
     if (!q) return true;
-    const fields = [
+    return [
       item.nama,
       item.nis,
       item.tanggung_jawab,
@@ -348,8 +366,7 @@ function InputPerilaku() {
       item.spiritual,
       item.kejujuran,
       item.kepercayaan_diri
-    ];
-    return fields.some((field) => String(field ?? '').toLowerCase().includes(q));
+    ].some((field) => String(field ?? '').toLowerCase().includes(q));
   });
 
   const toggleSelectIndex = (id) => {
@@ -435,36 +452,69 @@ function InputPerilaku() {
             <div className="loading"><div className="spinner"></div></div>
           ) : (
             <>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                placeholder="Cari nama, NIS..."
-                value={indexSearch}
-                onChange={(e) => setIndexSearch(e.target.value)}
-                style={{ flex: '1 1 200px', minWidth: 0, padding: '6px 10px', fontSize: '13px', border: '1px solid #ccc', borderRadius: '4px' }}
-              />
-              {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
-                <>
-                  <span style={{ fontSize: '13px' }}>{selectedIndexIds.length} dipilih</span>
-                  <button
-                    className="btn btn-danger"
-                    onClick={handleBulkDelete}
-                    disabled={bulkDeleting}
-                    style={{ padding: '5px 10px', fontSize: '12px' }}
-                  >
-                    {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
-                  </button>
-                  <button
-                    className="btn"
-                    onClick={() => setSelectedIndexIds([])}
-                    disabled={bulkDeleting}
-                    style={{ padding: '5px 10px', fontSize: '12px' }}
-                  >
-                    Batal
-                  </button>
-                </>
-              )}
-            </div>
+            {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '13px' }}>{selectedIndexIds.length} dipilih</span>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                >
+                  {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setSelectedIndexIds([])}
+                  disabled={bulkDeleting}
+                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                >
+                  Batal
+                </button>
+              </div>
+            )}
+          
+          {/* Filter Bar */}
+          <FilterBar
+            searchPlaceholder="Cari nama, NIS..."
+            searchValue={indexSearch}
+            onSearchChange={(e) => setIndexSearch(e.target.value)}
+            filters={
+              [
+                {
+                  key: 'status',
+                  type: 'select',
+                  label: 'Status',
+                  value: indexStatus,
+                  onChange: setIndexStatus,
+                  options: [
+                    { value: 'semua', label: 'Semua Status' },
+                    { value: 'pending', label: 'Menunggu' },
+                    { value: 'approved', label: 'Disetujui' },
+                    { value: 'rejected', label: 'Ditolak' }
+                  ]
+                },
+                {
+                  key: 'dateFrom',
+                  type: 'date',
+                  label: 'Tanggal Dari',
+                  value: indexDateFrom,
+                  onChange: setIndexDateFrom,
+                  placeholder: 'Dari'
+                },
+                {
+                  key: 'dateTo',
+                  type: 'date',
+                  label: 'Tanggal Sampai',
+                  value: indexDateTo,
+                  onChange: setIndexDateTo,
+                  placeholder: 'Sampai'
+                }
+              ]
+            }
+            onReset={resetIndexFilters}
+          />
+          
             <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>

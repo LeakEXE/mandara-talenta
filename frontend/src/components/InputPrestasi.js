@@ -7,6 +7,7 @@ import { validateEvidenceFile } from '../utils/evidence';
 import API_BASE_URL from '../config';
 import Select from 'react-select';
 import StudentSelect from './StudentSelect';
+import FilterBar from './FilterBar';
 import SearchableTeacherSelect from './SearchableTeacherSelect';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 
@@ -39,6 +40,13 @@ function InputPrestasi() {
   const [allPrestasi, setAllPrestasi] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
+  const [indexStatus, setIndexStatus] = useState('semua');
+  const [indexDateFrom, setIndexDateFrom] = useState('');
+  const [indexDateTo, setIndexDateTo] = useState('');
+  const [indexJenisLomba, setIndexJenisLomba] = useState('semua');
+  const [indexKategoriLomba, setIndexKategoriLomba] = useState('semua');
+  const [indexJuara, setIndexJuara] = useState('semua');
+  const [indexTingkat, setIndexTingkat] = useState('semua');
   const [selectedIndexIds, setSelectedIndexIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [userRole, setUserRole] = useState('');
@@ -172,7 +180,31 @@ function InputPrestasi() {
     }
   };
 
+  const resetIndexFilters = () => {
+    setIndexSearch('');
+    setIndexStatus('semua');
+    setIndexDateFrom('');
+    setIndexDateTo('');
+    setIndexJenisLomba('semua');
+    setIndexKategoriLomba('semua');
+    setIndexJuara('semua');
+    setIndexTingkat('semua');
+  };
+
   const filteredPrestasi = allPrestasi.filter((item) => {
+    if (indexStatus !== 'semua' && item.status !== indexStatus) return false;
+    if (indexJenisLomba !== 'semua' && item.jenis_lomba !== indexJenisLomba) return false;
+    if (indexKategoriLomba !== 'semua' && item.kategori_lomba !== indexKategoriLomba) return false;
+    if (indexJuara !== 'semua' && item.juara !== indexJuara) return false;
+    if (indexTingkat !== 'semua' && item.kategori !== indexTingkat) return false;
+    // Date range on tanggal lomba (tanggal_pelaksanaan). Rows without a
+    // date cannot match an active range, so they are hidden then.
+    if (indexDateFrom || indexDateTo) {
+      const d = item.tanggal_pelaksanaan ? String(item.tanggal_pelaksanaan).slice(0, 10) : '';
+      if (!d) return false;
+      if (indexDateFrom && d < indexDateFrom) return false;
+      if (indexDateTo && d > indexDateTo) return false;
+    }
     const q = indexSearch.trim().toLowerCase();
     if (!q) return true;
     const fields = [
@@ -662,36 +694,121 @@ function InputPrestasi() {
             <div className="loading"><div className="spinner"></div></div>
           ) : (
             <>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                placeholder="Cari nama, NIS, lomba, kategori..."
-                value={indexSearch}
-                onChange={(e) => setIndexSearch(e.target.value)}
-                style={{ flex: '1 1 200px', minWidth: 0, padding: '6px 10px', fontSize: '13px', border: '1px solid #ccc', borderRadius: '4px' }}
-              />
-              {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
-                <>
-                  <span style={{ fontSize: '13px' }}>{selectedIndexIds.length} dipilih</span>
-                  <button
-                    className="btn btn-danger"
-                    onClick={handleBulkDelete}
-                    disabled={bulkDeleting}
-                    style={{ padding: '5px 10px', fontSize: '12px' }}
-                  >
-                    {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
-                  </button>
-                  <button
-                    className="btn"
-                    onClick={() => setSelectedIndexIds([])}
-                    disabled={bulkDeleting}
-                    style={{ padding: '5px 10px', fontSize: '12px' }}
-                  >
-                    Batal
-                  </button>
-                </>
-              )}
-            </div>
+            {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '13px' }}>{selectedIndexIds.length} dipilih</span>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                >
+                  {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setSelectedIndexIds([])}
+                  disabled={bulkDeleting}
+                  style={{ padding: '5px 10px', fontSize: '12px' }}
+                >
+                  Batal
+                </button>
+              </div>
+            )}
+            <FilterBar
+              searchPlaceholder="Cari nama, NIS, lomba, kategori..."
+              searchValue={indexSearch}
+              onSearchChange={(e) => setIndexSearch(e.target.value)}
+              filters={[
+                {
+                  key: 'status',
+                  type: 'select',
+                  label: 'Status',
+                  value: indexStatus,
+                  onChange: setIndexStatus,
+                  options: [
+                    { value: 'semua', label: 'Semua Status' },
+                    { value: 'pending', label: 'Menunggu' },
+                    { value: 'approved', label: 'Disetujui' },
+                    { value: 'rejected', label: 'Ditolak' }
+                  ]
+                },
+                {
+                  key: 'jenisLomba',
+                  type: 'select',
+                  label: 'Jenis Lomba',
+                  value: indexJenisLomba,
+                  onChange: setIndexJenisLomba,
+                  options: [
+                    { value: 'semua', label: 'Semua Jenis' },
+                    { value: 'akademik', label: 'Akademik' },
+                    { value: 'non_akademik', label: 'Non-Akademik' }
+                  ]
+                },
+                {
+                  key: 'kategoriLomba',
+                  type: 'select',
+                  label: 'Kategori',
+                  value: indexKategoriLomba,
+                  onChange: setIndexKategoriLomba,
+                  options: [
+                    { value: 'semua', label: 'Semua Kategori' },
+                    { value: 'individu', label: 'Individu' },
+                    { value: 'kelompok', label: 'Kelompok' }
+                  ]
+                },
+                {
+                  key: 'juara',
+                  type: 'select',
+                  label: 'Juara',
+                  value: indexJuara,
+                  onChange: setIndexJuara,
+                  options: [
+                    { value: 'semua', label: 'Semua Juara' },
+                    { value: 'peserta', label: 'Peserta' },
+                    { value: 'finalis', label: 'Finalis' },
+                    { value: 'harapan_iii', label: 'Harapan III' },
+                    { value: 'harapan_ii', label: 'Harapan II' },
+                    { value: 'harapan_i', label: 'Harapan I' },
+                    { value: 'juara_iii', label: 'Juara III' },
+                    { value: 'juara_ii', label: 'Juara II' },
+                    { value: 'juara_i', label: 'Juara I' }
+                  ]
+                },
+                {
+                  key: 'tingkat',
+                  type: 'select',
+                  label: 'Tingkat',
+                  value: indexTingkat,
+                  onChange: setIndexTingkat,
+                  options: [
+                    { value: 'semua', label: 'Semua Tingkat' },
+                    { value: 'kecamatan', label: 'Kecamatan' },
+                    { value: 'kabupaten', label: 'Kabupaten' },
+                    { value: 'provinsi', label: 'Provinsi' },
+                    { value: 'nasional', label: 'Nasional' },
+                    { value: 'internasional', label: 'Internasional' }
+                  ]
+                },
+                {
+                  key: 'dateFrom',
+                  type: 'date',
+                  label: 'Tgl Lomba Dari',
+                  value: indexDateFrom,
+                  onChange: setIndexDateFrom,
+                  placeholder: 'Dari'
+                },
+                {
+                  key: 'dateTo',
+                  type: 'date',
+                  label: 'Tgl Lomba Sampai',
+                  value: indexDateTo,
+                  onChange: setIndexDateTo,
+                  placeholder: 'Sampai'
+                }
+              ]}
+              onReset={resetIndexFilters}
+            />
             <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>

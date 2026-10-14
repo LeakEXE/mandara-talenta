@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import StudentSelect from './StudentSelect';
+import FilterBar from './FilterBar';
 import EditModal from './EditModal';
 import useEditModal from '../hooks/useEditModal';
 import API_BASE_URL from '../config';
@@ -30,6 +31,10 @@ function InputOrganisasi() {
   const [allOrganisasi, setAllOrganisasi] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
+  const [indexStatus, setIndexStatus] = useState('semua');
+  const [indexDateFrom, setIndexDateFrom] = useState('');
+  const [indexDateTo, setIndexDateTo] = useState('');
+  const [indexJabatan, setIndexJabatan] = useState('semua');
   const [selectedIndexIds, setSelectedIndexIds] = useState([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [canApprove, setCanApprove] = useState(false);
@@ -338,17 +343,33 @@ function InputOrganisasi() {
     }
   };
 
+  const resetIndexFilters = () => {
+    setIndexSearch('');
+    setIndexStatus('semua');
+    setIndexDateFrom('');
+    setIndexDateTo('');
+    setIndexJabatan('semua');
+  };
+
   const filteredOrganisasi = allOrganisasi.filter((item) => {
+    if (indexStatus !== 'semua' && item.status !== indexStatus) return false;
+    if (indexJabatan !== 'semua' && item.jabatan_organisasi !== indexJabatan) return false;
+    if (indexDateFrom || indexDateTo) {
+      const d = item.created_at ? String(item.created_at).slice(0, 10) : '';
+      if (!d) return false;
+      if (indexDateFrom && d < indexDateFrom) return false;
+      if (indexDateTo && d > indexDateTo) return false;
+    }
     const q = indexSearch.trim().toLowerCase();
     if (!q) return true;
-    return (
-      String(item.nama || '').toLowerCase().includes(q) ||
-      String(item.nis || '').toLowerCase().includes(q) ||
-      String(item.kategori_organisasi || '').toLowerCase().includes(q) ||
-      String(item.jabatan_organisasi || '').toLowerCase().includes(q) ||
-      String(item.point ?? '').toLowerCase().includes(q) ||
-      String(item.status || '').toLowerCase().includes(q)
-    );
+    return [
+      item.nama,
+      item.nis,
+      item.kategori_organisasi,
+      item.jabatan_organisasi,
+      item.point,
+      item.status
+    ].some((field) => String(field ?? '').toLowerCase().includes(q));
   });
 
   const toggleSelectIndex = (id) => {
@@ -505,36 +526,80 @@ function InputOrganisasi() {
             <div className="loading"><div className="spinner"></div></div>
           ) : (
             <>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
-              <input
-                type="text"
-                value={indexSearch}
-                onChange={(e) => setIndexSearch(e.target.value)}
-                placeholder="Cari nama, NIS, kategori, jabatan..."
-                style={{ flex: 1, minWidth: '200px', padding: '8px 12px', border: '1px solid #d0d0d0', borderRadius: '4px' }}
-              />
-              {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', color: '#555' }}>{selectedIndexIds.length} dipilih</span>
-                  <button
-                    className="btn btn-danger"
-                    onClick={handleBulkDelete}
-                    disabled={bulkDeleting}
-                    style={{ padding: '6px 12px', fontSize: '13px' }}
-                  >
-                    {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => setSelectedIndexIds([])}
-                    disabled={bulkDeleting}
-                    style={{ padding: '6px 12px', fontSize: '13px' }}
-                  >
-                    Batal
-                  </button>
-                </div>
-              )}
+          {userRole === 'superadmin' && selectedIndexIds.length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '13px', color: '#555' }}>{selectedIndexIds.length} dipilih</span>
+              <button
+                className="btn btn-danger"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                {bulkDeleting ? 'Menghapus...' : `Hapus terpilih (${selectedIndexIds.length})`}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setSelectedIndexIds([])}
+                disabled={bulkDeleting}
+                style={{ padding: '6px 12px', fontSize: '13px' }}
+              >
+                Batal
+              </button>
             </div>
+          )}
+          
+          {/* Filter Bar */}
+          <FilterBar
+            searchPlaceholder="Cari nama, NIS, kategori, jabatan..."
+            searchValue={indexSearch}
+            onSearchChange={(e) => setIndexSearch(e.target.value)}
+            filters={
+              [
+                {
+                  key: 'status',
+                  type: 'select',
+                  label: 'Status',
+                  value: indexStatus,
+                  onChange: setIndexStatus,
+                  options: [
+                    { value: 'semua', label: 'Semua Status' },
+                    { value: 'pending', label: 'Menunggu' },
+                    { value: 'approved', label: 'Disetujui' },
+                    { value: 'rejected', label: 'Ditolak' }
+                  ]
+                },
+                {
+                  key: 'jabatan',
+                  type: 'select',
+                  label: 'Jabatan',
+                  value: indexJabatan,
+                  onChange: setIndexJabatan,
+                  options: [
+                    { value: 'semua', label: 'Semua Jabatan' },
+                    ...jabatanOptions.map(j => ({ value: j.value, label: j.label }))
+                  ]
+                },
+                {
+                  key: 'dateFrom',
+                  type: 'date',
+                  label: 'Tanggal Dari',
+                  value: indexDateFrom,
+                  onChange: setIndexDateFrom,
+                  placeholder: 'Dari'
+                },
+                {
+                  key: 'dateTo',
+                  type: 'date',
+                  label: 'Tanggal Sampai',
+                  value: indexDateTo,
+                  onChange: setIndexDateTo,
+                  placeholder: 'Sampai'
+                }
+              ]
+            }
+            onReset={resetIndexFilters}
+          />
+          
             <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
               <table className="table">
                 <thead>
