@@ -233,7 +233,7 @@ router.get('/leaderboard/pembina/:pembinaId/records', auth, async (req, res) => 
         }
         const [rows] = await db.query(
             `SELECT p.id, p.user_id, p.nama_lomba, p.juara, p.kategori,
-                    p.jenis_lomba, p.kategori_lomba, p.grup_lomba, p.point,
+                    p.jenis_lomba, p.kategori_lomba, p.grup_lomba, p.tanggal_pelaksanaan, p.point,
                     p.foto, p.created_at,
                     u.nama AS student_nama, u.nis AS student_nis, u.kelas AS student_kelas
              FROM prestasi p

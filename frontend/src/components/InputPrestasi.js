@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
-import { formatDisplayText } from '../utils/formatDisplayText';
+import { formatDisplayText, formatTanggalLomba, toDateInputValue } from '../utils/formatDisplayText';
 import EditModal from './EditModal';
 import useEditModal from '../hooks/useEditModal';
 import { validateEvidenceFile } from '../utils/evidence';
@@ -14,6 +14,7 @@ function InputPrestasi() {
     nama: '',
     nis: '',
     nama_lomba: '',
+    tanggal_pelaksanaan: '',
     jenis_lomba: 'akademik',
     kategori_lomba: 'individu',
     kelas: '',
@@ -177,6 +178,7 @@ function InputPrestasi() {
       item.nama,
       item.nis,
       item.nama_lomba,
+      item.tanggal_pelaksanaan,
       item.jenis_lomba,
       item.kategori_lomba,
       item.juara,
@@ -543,10 +545,12 @@ function InputPrestasi() {
         nama: '',
         nis: '',
         nama_lomba: '',
+        tanggal_pelaksanaan: '',
         jenis_lomba: 'akademik',
         kategori_lomba: 'individu',
         kelas: '',
         pembina_id: '',
+        pembina_ids: [],
         grha: '',
         juara: 'juara_i',
         kategori: 'sekolah'
@@ -611,7 +615,7 @@ function InputPrestasi() {
       setSelectedIndexIds(prev => [...new Set([...prev, ...ids])]);
     }
   };
-  const tableColCount = userRole === 'superadmin' ? 13 : 12;
+  const tableColCount = userRole === 'superadmin' ? 14 : 13;
   const isKelompokEdit = editModal.editingItem?.kategori_lomba === 'kelompok' && !!editModal.editingItem?.grup_lomba;
 
   // Kelompok submissions (same grup_lomba) collapse into one history card.
@@ -712,6 +716,7 @@ function InputPrestasi() {
                     <th>Nama</th>
                     <th>NIS</th>
                     <th>Lomba</th>
+                    <th>Tgl Lomba</th>
                     <th>Jenis</th>
                     <th>Kategori</th>
                     <th>Juara</th>
@@ -741,6 +746,7 @@ function InputPrestasi() {
                       <td>{item.nama}</td>
                       <td>{item.nis}</td>
                       <td>{item.nama_lomba}</td>
+                      <td>{formatTanggalLomba(item.tanggal_pelaksanaan)}</td>
                       <td>{formatDisplayText(item.jenis_lomba || 'akademik')}</td>
                       <td>{formatDisplayText(item.kategori_lomba || 'individu')}</td>
                       <td>{formatDisplayText(item.juara)}</td>
@@ -781,6 +787,7 @@ function InputPrestasi() {
                         </td>
                         <td>-</td>
                         <td>{first.nama_lomba}</td>
+                        <td>{formatTanggalLomba(first.tanggal_pelaksanaan)}</td>
                         <td>{formatDisplayText(first.jenis_lomba || 'akademik')}</td>
                         <td>Kelompok</td>
                         <td>{formatDisplayText(first.juara)}</td>
@@ -981,6 +988,17 @@ function InputPrestasi() {
         </div>
 
         <div className="form-group">
+          <label>Tanggal Pelaksanaan Lomba</label>
+          <input
+            type="date"
+            name="tanggal_pelaksanaan"
+            value={formData.tanggal_pelaksanaan}
+            onChange={handleChange}
+          />
+          <small style={{ color: '#666', fontSize: '12px' }}>Tanggal lomba dilaksanakan (opsional, boleh kosong).</small>
+        </div>
+
+        <div className="form-group">
           <label>Pembina (bisa lebih dari 1)</label>
           <SearchableTeacherSelect
             isMulti
@@ -1137,11 +1155,21 @@ function InputPrestasi() {
           <input
             type="text"
             name="nama_lomba"
-            value={editModal.editFormData.nama_lomba || ''} 
+            value={editModal.editFormData.nama_lomba || ''}
             onChange={(e) => editModal.setEditFormData({ ...editModal.editFormData, nama_lomba: e.target.value })}
             placeholder="Nama lomba"
             required
           />
+        </div>
+
+        <div className="form-group">
+          <label>Tanggal Pelaksanaan Lomba</label>
+          <input
+            type="date"
+            value={toDateInputValue(editModal.editFormData.tanggal_pelaksanaan)}
+            onChange={(e) => editModal.setEditFormData({ ...editModal.editFormData, tanggal_pelaksanaan: e.target.value })}
+          />
+          <small style={{ color: '#666', fontSize: '12px' }}>Tanggal lomba dilaksanakan (opsional, boleh kosong).</small>
         </div>
 
         <div className="form-grid-2">
@@ -1234,6 +1262,9 @@ function InputPrestasi() {
                     </p>
                     <p style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>
                       Pembina: {pembinaLabel(first)}
+                    </p>
+                    <p style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>
+                      Tgl Pelaksanaan: {formatTanggalLomba(first.tanggal_pelaksanaan)}
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
                       Diajukan: {new Date(first.created_at).toLocaleDateString('id-ID')}

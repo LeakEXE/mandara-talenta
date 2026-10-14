@@ -23,6 +23,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits: EVIDENCE_LIMITS });
 const { calculatePrestasiPoints } = require('../constants/points');
 const { buildKeterangan, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, resolveStudentIdByNis } = require('../utils/ipt');
+const { normalizeTanggalPelaksanaan } = require('../utils/prestasiFields');
 
 // Get all prestasi (for approvals)
 router.get('/all', auth, async (req, res) => {
@@ -59,7 +60,7 @@ router.get('/teachers', auth, async (req, res) => {
 router.get('/user/:userId', auth, async (req, res) => {
     try {
         const [prestasi] = await db.query(
-            'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
+            'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
             [req.params.userId, 'approved']
         );
         res.json(prestasi);
@@ -73,6 +74,12 @@ router.get('/user/:userId', auth, async (req, res) => {
 router.post('/', auth, upload.single('foto'), async (req, res) => {
     try {
         const { nama, nis, nama_lomba, kelas, pembina, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
+        let tanggalPelaksanaan = null;
+        try {
+            tanggalPelaksanaan = normalizeTanggalPelaksanaan(req.body.tanggal_pelaksanaan);
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
         let foto = req.file ? req.file.filename : null;
 
         // Rename file to NIS_Nama Lomba format
@@ -96,8 +103,8 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
             : (resolvedPembinaId ? [resolvedPembinaId] : []);
 
         const [result] = await db.query(
-            'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.user.id, nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point]
+            'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggal_pelaksanaan, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [req.user.id, nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggalPelaksanaan, point]
         );
         await setPembinaLinks(db.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
 
@@ -121,7 +128,7 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         await conn.beginTransaction();
         const prestasiId = req.params.id;
 
-        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
+        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
         if (prestasi.length === 0) {
             await conn.rollback();
             return res.status(404).json({ message: 'Prestasi not found' });
@@ -242,8 +249,14 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
     try {
         const prestasiId = req.params.id;
         const { nama, nis, nama_lomba, kelas, pembina, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
-        
-        const [prestasi] = await db.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
+        let tanggalPelaksanaan = null;
+        try {
+            tanggalPelaksanaan = normalizeTanggalPelaksanaan(req.body.tanggal_pelaksanaan);
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
+
+        const [prestasi] = await db.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
         if (prestasi.length === 0) {
             return res.status(404).json({ message: 'Prestasi not found' });
         }
@@ -302,8 +315,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                 }
 
                 const [upd] = await conn.query(
-                    'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, point = ? WHERE id = ?',
-                    [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, point, prestasiId]
+                    'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, tanggal_pelaksanaan = ?, point = ? WHERE id = ?',
+                    [nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggalPelaksanaan, point, prestasiId]
                 );
                 if (upd.affectedRows === 0) {
                     await conn.rollback();
@@ -326,7 +339,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             } else {
                 // ---- kelompok path: shared fields + membership diff ----
                 const [siblings] = await conn.query(
-                    'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE grup_lomba = ?',
+                    'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE grup_lomba = ?',
                     [prestasiData.grup_lomba]
                 );
 
@@ -369,8 +382,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                 for (const s of kept) {
                     // eslint-disable-next-line no-await-in-loop
                     await conn.query(
-                        'UPDATE prestasi SET nama_lomba = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, pembina = ?, pembina_id = ?, foto = ?, point = ? WHERE id = ?',
-                        [nama_lomba, juara, kategori, jenis_lomba, 'kelompok', resolvedPembinaName, resolvedPembinaId, sharedFoto, point, s.id]
+                        'UPDATE prestasi SET nama_lomba = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, pembina = ?, pembina_id = ?, foto = ?, tanggal_pelaksanaan = ?, point = ? WHERE id = ?',
+                        [nama_lomba, juara, kategori, jenis_lomba, 'kelompok', resolvedPembinaName, resolvedPembinaId, sharedFoto, tanggalPelaksanaan, point, s.id]
                     );
                     // eslint-disable-next-line no-await-in-loop
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', s.id, mentorIds);
@@ -381,8 +394,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                 for (const m of added) {
                     // eslint-disable-next-line no-await-in-loop
                     const [addedRow] = await conn.query(
-                        'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, 'kelompok', prestasiData.grup_lomba, sharedFoto, point, prestasiData.status]
+                        'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, 'kelompok', prestasiData.grup_lomba, tanggalPelaksanaan, sharedFoto, point, prestasiData.status]
                     );
                     // eslint-disable-next-line no-await-in-loop
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', addedRow.insertId, mentorIds);
@@ -453,7 +466,7 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         await conn.beginTransaction();
         const prestasiId = req.params.id;
 
-        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
+        const [prestasi] = await conn.query('SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE id = ?', [prestasiId]);
         if (prestasi.length === 0) {
             await conn.rollback();
             return res.status(404).json({ message: 'Prestasi not found' });
