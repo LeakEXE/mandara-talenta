@@ -2,32 +2,62 @@ name: Deploy to Windows Server
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    # NOTE: the runner OS is irrelevant the command below runs on the
-    # Windows Server over SSH (OpenSSH default shell = cmd.exe, NOT bash/PowerShell).
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
       - name: Deploy to Server
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@0.1.7  # TODO: pin to full SHA
+        env:
+          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
+          PM2_APP_NAME: ${{ secrets.PM2_APP_NAME }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          # Full deploy can exceed the action's 10m default (3x npm install incl. Puppeteer + CRA build).
           command_timeout: 30m
-          # Single-line cmd.exe chain (NOT PowerShell/bash). cmd.exe gotchas handled:
-          # - `if` WITHOUT parentheses swallows the rest of the line (false condition
-          #   silently skips everything AND exits 0), so every conditional is wrapped: (if ... )
-          # - `timeout /t` fails over non-TTY SSH, and System32 is NOT on the server's PATH
-          #   (ping/curl "not recognized") -> reference %SystemRoot%\System32 binaries by full path;
-          #   PING acts as the sleep before the smoke test
-          # - `call` before npm/pm2 so control returns (.cmd shims)
-          # - `npm install`, NOT `npm ci` (package-lock.json is gitignored)
-          # - backend/uploads and .env are gitignored and never touched
-          # - PM2 app name is `mandara-talenta` from ecosystem.config.js (repo root)
-          # - no `--env production`: ecosystem.config.js only defines base `env` (already NODE_ENV=production)
-          script: 'cd /d "${{ secrets.PROJECT_PATH }}" && git pull && node --version && call npm --version && (if not exist logs mkdir logs) && call npm install --no-audit --no-fund && cd backend && call npm install --no-audit --no-fund && cd ..\frontend && (if exist build rmdir /s /q build) && call npm install --no-audit --no-fund && call npm run build && dir build\index.html >nul 2>nul && cd .. && (call pm2 restart mandara-talenta --update-env || call pm2 start ecosystem.config.js) && call pm2 save && call pm2 list && "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul && "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ && echo SMOKE TEST OK && echo Deployment completed successfully'
+          script: |
+            cd /d "%PROJECT_PATH%" || exit /b 1
+            git pull --ff-only || exit /b 1
+            node --version && call npm --version
+            (if not exist logs mkdir logs)
+            call npm install --no-audit --no-fund || exit /b 1
+            cd backend && call npm install --no-audit --no-fund || exit /b 1
+            cd ..\frontend
+            (if exist build rmdir /s /q build)
+            call npm install --no-audit --no-fund || exit /b 1
+            call npm run build || exit /b 1
+            dir build\index.html >nul 2>nul || exit /b 1
+            cd ..
+            (call pm2 restart %PM2_APP_NAME% --update-env || call pm2 start ecosystem.config.js) || exit /b 1
+            call pm2 save
+            "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul
+            "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ || exit /b 1
+            echo SMOKE TEST OK
+            echo Deployment completed successfully
+
+      - name: Notify Discord - Success
+        if: success()
+        uses: Ilshidur/action-discord@0.3.2  # TODO: pin to full SHA
+        with:
+          args: "✅ Deploy succeeded: ${{ github.repository }}@${{ github.sha }}"
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: Notify Discord - Failure
+        if: failure()
+        uses: Ilshidur/action-discord@0.3.2  # TODO: pin to full SHA
+        with:
+          args: "❌ Deploy failed: ${{ github.repository }}@${{ github.sha }} — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
