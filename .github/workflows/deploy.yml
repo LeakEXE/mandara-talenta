@@ -23,25 +23,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           command_timeout: 30m
-          script: |
-            cd /d "${{ secrets.PROJECT_PATH }}" || exit /b 1
-            git pull --ff-only || exit /b 1
-            node --version && call npm --version
-            (if not exist logs mkdir logs)
-            call npm install --no-audit --no-fund || exit /b 1
-            cd backend && call npm install --no-audit --no-fund || exit /b 1
-            cd ..\frontend
-            (if exist build rmdir /s /q build)
-            call npm install --no-audit --no-fund || exit /b 1
-            call npm run build || exit /b 1
-            dir build\index.html >nul 2>nul || exit /b 1
-            cd ..
-            (call pm2 restart ${{ secrets.PM2_APP_NAME }} --update-env || call pm2 start ecosystem.config.js) || exit /b 1
-            call pm2 save
-            "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul
-            "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ || exit /b 1
-            echo SMOKE TEST OK
-            echo Deployment completed successfully
+          script: 'cd /d "${{ secrets.PROJECT_PATH }}" && git pull --ff-only && node --version && call npm --version && (if not exist logs mkdir logs) && call npm install --no-audit --no-fund && cd backend && call npm install --no-audit --no-fund && cd ..\frontend && (if exist build rmdir /s /q build) && call npm install --no-audit --no-fund && call npm run build && dir build\index.html >nul 2>nul && cd .. && (call pm2 restart ${{ secrets.PM2_APP_NAME }} --update-env || call pm2 start ecosystem.config.js) && call pm2 save && "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul && "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ && echo SMOKE TEST OK && echo Deployment completed successfully'
 
       - name: Notify Discord - Success
         if: success()
