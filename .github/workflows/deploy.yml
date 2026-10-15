@@ -25,6 +25,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: PROJECT_PATH,PM2_APP_NAME
           command_timeout: 30m
           script: |
             cd /d "%PROJECT_PATH%" || exit /b 1
