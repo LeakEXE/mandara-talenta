@@ -1860,7 +1860,8 @@ function KelolaAkun() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1500
+          zIndex: 1500,
+          paddingTop: '70px'
         }}>
           <div className="card" style={{ width: 500, maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
             <h3>Edit Data {editStudent?.role === 'siswa' ? 'Siswa' : 'Guru'}</h3>

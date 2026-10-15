@@ -131,6 +131,24 @@ router.get('/files/:folderName', auth, superAdminOnly, async (req, res) => {
             f.referenced = isFotoReferenced(refs, f.path);
         }
 
+        // For avatars folder, include the linked username
+        if (sanitizedFolderName === 'avatars') {
+            const [avatarRows] = await db.query(
+                'SELECT username, foto FROM users WHERE foto IS NOT NULL AND foto <> \'\''
+            );
+            const fileToUsername = {};
+            for (const row of avatarRows) {
+                const normalized = String(row.foto).replace(/\\/g, '/').replace(/^\/+/, '').replace(/^uploads\//i, '');
+                const basename = normalized.split('/').pop();
+                fileToUsername[basename] = row.username;
+                fileToUsername[normalized] = row.username;
+            }
+            for (const f of files) {
+                const basename = f.name;
+                f.username = fileToUsername[basename] || fileToUsername[f.path.replace(/^\/+/, '')] || null;
+            }
+        }
+
         res.json(files);
     } catch (error) {
         console.error('Error listing files:', error);

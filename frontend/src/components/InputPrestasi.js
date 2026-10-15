@@ -675,7 +675,7 @@ function InputPrestasi() {
         <h2>Input Prestasi</h2>
         {showStaffIndex && (
           <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
-            + Input Prestasi
+            {showForm ? 'Tutup Form' : '+ Input Prestasi'}
           </button>
         )}
       </div>

@@ -401,6 +401,9 @@ function DriveViewer() {
                 <thead>
                   <tr style={{ backgroundColor: 'var(--blue)', color: 'white' }}>
                     <th style={{ padding: '12px', textAlign: 'left' }}>File Name</th>
+                    {selectedFolder === 'avatars' && (
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Username</th>
+                    )}
                     <th style={{ padding: '12px', textAlign: 'left' }}>Lokasi</th>
                     <th style={{ padding: '12px', textAlign: 'left' }}>Size</th>
                     <th style={{ padding: '12px', textAlign: 'left' }}>Created</th>
@@ -434,6 +437,11 @@ function DriveViewer() {
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: '500', color: '#333' }}><FileText size={14} /> {file.name}</span>
                         )}
                       </td>
+                      {selectedFolder === 'avatars' && (
+                        <td style={{ padding: '12px', color: '#666' }}>
+                          {file.username || '-'}
+                        </td>
+                      )}
                       <td style={{ padding: '12px', color: '#666' }}>
                         {file.subfolder || '-'}
                         {file.referenced === false && (
