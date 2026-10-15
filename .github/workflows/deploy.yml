@@ -17,18 +17,14 @@ jobs:
     steps:
       - name: Deploy to Server
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
-        env:
-          PROJECT_PATH: ${{ secrets.PROJECT_PATH }}
-          PM2_APP_NAME: ${{ secrets.PM2_APP_NAME }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          envs: PROJECT_PATH,PM2_APP_NAME
           command_timeout: 30m
           script: |
-            cd /d "%PROJECT_PATH%" || exit /b 1
+            cd /d "${{ secrets.PROJECT_PATH }}" || exit /b 1
             git pull --ff-only || exit /b 1
             node --version && call npm --version
             (if not exist logs mkdir logs)
@@ -40,7 +36,7 @@ jobs:
             call npm run build || exit /b 1
             dir build\index.html >nul 2>nul || exit /b 1
             cd ..
-            (call pm2 restart %PM2_APP_NAME% --update-env || call pm2 start ecosystem.config.js) || exit /b 1
+            (call pm2 restart ${{ secrets.PM2_APP_NAME }} --update-env || call pm2 start ecosystem.config.js) || exit /b 1
             call pm2 save
             "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul
             "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ || exit /b 1
