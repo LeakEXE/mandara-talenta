@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../utils/api';
 import StudentSelect from './StudentSelect';
 import FilterBar from './FilterBar';
@@ -42,6 +42,14 @@ function InputKepanitiaan() {
   const [iptConfig, setIptConfig] = useState([]);
   const [calculatedPoint, setCalculatedPoint] = useState(0);
   const [students, setStudents] = useState([]);
+  // Server-side pagination state (same pattern as KelolaAkun)
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 0 });
+  const [refreshing, setRefreshing] = useState(false);
+  const searchRef = useRef(indexSearch);
+  searchRef.current = indexSearch;
+  const limitRef = useRef(pagination.limit);
+  limitRef.current = pagination.limit;
+  const fetchStartedRef = useRef(false);
 
   const grhaOptions = [
     'Airsanya', 'Daksina', 'Genya', 'Madhya', 'Nairiti', 'Pascima', 'Purwa', 'Uttara', 'Wayabhya'
@@ -78,23 +86,42 @@ function InputKepanitiaan() {
     checkAccess();
     fetchIptConfig();
     if (user.role === 'superadmin') {
-      fetchAllKepanitiaan();
+      fetchAllKepanitiaan(1);
     } else if (user.role === 'guru' || user.role === 'pegawai') {
       api.get('/permissions/my-permissions').then(r => { const scopes = r.data?.approval_scopes || []; const allowed = scopes.includes('kepanitiaan'); setCanApprove(allowed); if (allowed) fetchAllKepanitiaan(); }).catch(() => setCanApprove(false));
     }
   }, []);
 
-  const fetchAllKepanitiaan = async () => {
+  const fetchAllKepanitiaan = useCallback(async (page = 1) => {
+    const isFirstLoad = !fetchStartedRef.current;
+    fetchStartedRef.current = true;
     try {
-      setLoadingIndex(true);
-      const response = await api.get('/kepanitiaan/all');
-      setAllKepanitiaan(response.data);
+      if (isFirstLoad) {
+        setLoadingIndex(true);
+      } else {
+        setRefreshing(true);
+      }
+      const params = new URLSearchParams({
+        page,
+        limit: limitRef.current,
+        search: searchRef.current,
+        status: indexStatus,
+        tingkat_kepanitiaan: indexJabatan,
+        date_from: indexDateFrom,
+        date_to: indexDateTo,
+      });
+      const response = await api.get(`/kepanitiaan/all?${params.toString()}`);
+      setAllKepanitiaan(response.data.data || response.data || []);
+      if (response.data.pagination) {
+        setPagination(response.data.pagination);
+      }
     } catch (error) {
       console.error('Error fetching all kepanitiaan:', error);
     } finally {
       setLoadingIndex(false);
+      setRefreshing(false);
     }
-  };
+  }, [indexStatus, indexJabatan, indexDateFrom, indexDateTo]);
 
   const checkAccess = async () => {
     try {
@@ -332,27 +359,37 @@ function InputKepanitiaan() {
     setIndexJabatan('semua');
   };
 
-  const filteredKepanitiaan = allKepanitiaan.filter((item) => {
-    if (indexStatus !== 'semua' && item.status !== indexStatus) return false;
-    // Date range on created_at (all IPT types use this timestamp)
-    if (indexDateFrom || indexDateTo) {
-      const d = item.created_at ? String(item.created_at).slice(0, 10) : '';
-      if (!d) return false;
-      if (indexDateFrom && d < indexDateFrom) return false;
-      if (indexDateTo && d > indexDateTo) return false;
+  // Debounced search effect for index (same pattern as KelolaAkun)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchAllKepanitiaan(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [indexSearch, indexStatus, indexJabatan, indexDateFrom, indexDateTo, fetchAllKepanitiaan]);
+
+  const filteredKepanitiaan = allKepanitiaan;
+
+  const handleLimitChange = (newLimit) => {
+    limitRef.current = newLimit;
+    setPagination((prev) => ({ ...prev, limit: newLimit }));
+    fetchAllKepanitiaan(1);
+  };
+
+  const getPageNumbers = () => {
+    const total = pagination.totalPages || 0;
+    const current = pagination.page || 1;
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
     }
-    const query = indexSearch.trim().toLowerCase();
-    if (!query) return true;
-    const fields = [
-      item.nama,
-      item.nis,
-      item.kategori_kepanitiaan,
-      item.jabatan_kepanitiaan,
-      item.point,
-      item.status
-    ];
-    return fields.some((field) => String(field ?? '').toLowerCase().includes(query));
-  });
+    const candidates = new Set([1, 2, current - 1, current, current + 1, total - 1, total]);
+    const nums = [...candidates].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+    const out = [];
+    nums.forEach((n, i) => {
+      if (i > 0 && n - nums[i - 1] > 1) out.push('...');
+      out.push(n);
+    });
+    return out;
+  };
 
   const toggleSelectIndex = (id) => {
     setSelectedIndexIds((prev) =>
@@ -584,7 +621,7 @@ function InputKepanitiaan() {
                 onReset={resetIndexFilters}
               />
               
-              <div style={{ maxHeight: '400px', overflowX: 'auto', overflowY: 'auto' }}>
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' }}>
               <table className="table">
                 <thead>
                   <tr>
@@ -663,6 +700,84 @@ function InputKepanitiaan() {
                 )
               )}
               </div>
+
+            {/* Pagination (KelolaAkun pattern) */}
+            {!loadingIndex && filteredKepanitiaan.length > 0 && (
+              <>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  flexWrap: 'wrap', gap: '12px', marginTop: '16px'
+                }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', color: '#666' }}>
+                    <label htmlFor="kepanitiaan-limit">Baris per halaman:</label>
+                    <select
+                      id="kepanitiaan-limit"
+                      value={pagination.limit}
+                      onChange={(e) => handleLimitChange(parseInt(e.target.value, 10))}
+                      style={{
+                        padding: '6px 10px', border: '1px solid #d0d0d0', borderRadius: '4px',
+                        fontSize: '12px', background: 'white', color: '#333', cursor: 'pointer'
+                      }}
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => fetchAllKepanitiaan(pagination.page - 1)}
+                      disabled={pagination.page <= 1 || loadingIndex || refreshing}
+                      style={{
+                        padding: '6px 12px', border: '1px solid #d0d0d0', borderRadius: '4px',
+                        fontSize: '12px', cursor: pagination.page <= 1 || loadingIndex || refreshing ? 'not-allowed' : 'pointer',
+                        background: pagination.page <= 1 || loadingIndex || refreshing ? '#f5f5f5' : 'white',
+                        color: pagination.page <= 1 || loadingIndex || refreshing ? '#999' : '#333'
+                      }}
+                    >
+                      ← Sebelumnya
+                    </button>
+                    {getPageNumbers().map((p, idx) => (
+                      p === '...' ? (
+                        <span key={`ellipsis-${idx}`} style={{ fontSize: '12px', color: '#999', padding: '0 2px' }}>…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => fetchAllKepanitiaan(p)}
+                          disabled={loadingIndex || refreshing || p === pagination.page}
+                          style={{
+                            minWidth: '30px', padding: '6px 8px', border: '1px solid #d0d0d0', borderRadius: '4px',
+                            fontSize: '12px', cursor: loadingIndex || refreshing || p === pagination.page ? 'default' : 'pointer',
+                            background: p === pagination.page ? 'var(--blue)' : 'white',
+                            color: p === pagination.page ? 'white' : '#333',
+                            fontWeight: p === pagination.page ? '700' : '400'
+                          }}
+                        >
+                          {p}
+                        </button>
+                      )
+                    ))}
+                    <button
+                      onClick={() => fetchAllKepanitiaan(pagination.page + 1)}
+                      disabled={pagination.page >= pagination.totalPages || loadingIndex || refreshing}
+                      style={{
+                        padding: '6px 12px', border: '1px solid #d0d0d0', borderRadius: '4px',
+                        fontSize: '12px', cursor: pagination.page >= pagination.totalPages || loadingIndex || refreshing ? 'not-allowed' : 'pointer',
+                        background: pagination.page >= pagination.totalPages || loadingIndex || refreshing ? '#f5f5f5' : 'white',
+                        color: pagination.page >= pagination.totalPages || loadingIndex || refreshing ? '#999' : '#333'
+                      }}
+                    >
+                      Selanjutnya →
+                    </button>
+                  </div>
+                </div>
+                <div style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>
+                  Menampilkan {(pagination.page - 1) * pagination.limit + 1}&ndash;{Math.min(pagination.page * pagination.limit, pagination.total)} dari {pagination.total} data (Halaman {pagination.page} dari {pagination.totalPages})
+                  {refreshing && <span style={{ marginLeft: '8px', color: 'var(--blue)' }}>Memuat…</span>}
+                </div>
+              </>
+            )}
+            </div>
             </>
           )}
         </div>

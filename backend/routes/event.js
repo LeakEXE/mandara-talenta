@@ -24,16 +24,61 @@ const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits
 const { calculateEventPoints } = require('../constants/points');
 const { buildKeterangan } = require('../utils/ipt');
 
-// Get all event (for approvals)
+// Get all event (for approvals) — server-side pagination + filters
 router.get('/all', auth, async (req, res) => {
     try {
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
+        const offset = (page - 1) * limit;
+
+        const where = [];
+        const params = [];
+
+        if (req.query.search) {
+            where.push('(e.nama LIKE ? OR e.nis LIKE ? OR e.nama_event LIKE ? OR e.tingkat LIKE ? OR e.status LIKE ?)');
+            const q = `%${req.query.search}%`;
+            params.push(q, q, q, q, q);
+        }
+        if (req.query.status && req.query.status !== 'semua') {
+            where.push('e.status = ?');
+            params.push(req.query.status);
+        }
+        if (req.query.tingkat && req.query.tingkat !== 'semua') {
+            where.push('e.tingkat = ?');
+            params.push(req.query.tingkat);
+        }
+        if (req.query.date_from) {
+            where.push('e.created_at >= ?');
+            params.push(req.query.date_from);
+        }
+        if (req.query.date_to) {
+            where.push('e.created_at <= ?');
+            params.push(req.query.date_to);
+        }
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        const [countRows] = await db.query(`SELECT COUNT(*) as total FROM event e ${whereSql}`, params);
+        const total = countRows[0].total;
+
         const [events] = await db.query(`
             SELECT e.*, u.nama as user_name 
             FROM event e 
             JOIN users u ON e.user_id = u.id 
+            ${whereSql}
             ORDER BY e.created_at DESC
-        `);
-        res.json(events);
+            LIMIT ? OFFSET ?
+        `, [...params, limit, offset]);
+
+        res.json({
+            data: events,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });

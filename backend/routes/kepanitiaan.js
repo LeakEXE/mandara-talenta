@@ -24,16 +24,61 @@ const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits
 const { calculateKepanitiaanPoints } = require('../constants/points');
 const { buildKeterangan } = require('../utils/ipt');
 
-// Get all kepanitiaan (for approvals)
+// Get all kepanitiaan (for approvals) — server-side pagination + filters
 router.get('/all', auth, async (req, res) => {
     try {
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
+        const offset = (page - 1) * limit;
+
+        const where = [];
+        const params = [];
+
+        if (req.query.search) {
+            where.push('(k.nama LIKE ? OR k.nis LIKE ? OR k.jabatan_kepanitiaan LIKE ? OR k.tingkat_kepanitiaan LIKE ? OR k.status LIKE ?)');
+            const q = `%${req.query.search}%`;
+            params.push(q, q, q, q, q);
+        }
+        if (req.query.status && req.query.status !== 'semua') {
+            where.push('k.status = ?');
+            params.push(req.query.status);
+        }
+        if (req.query.tingkat_kepanitiaan && req.query.tingkat_kepanitiaan !== 'semua') {
+            where.push('k.tingkat_kepanitiaan = ?');
+            params.push(req.query.tingkat_kepanitiaan);
+        }
+        if (req.query.date_from) {
+            where.push('k.created_at >= ?');
+            params.push(req.query.date_from);
+        }
+        if (req.query.date_to) {
+            where.push('k.created_at <= ?');
+            params.push(req.query.date_to);
+        }
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        const [countRows] = await db.query(`SELECT COUNT(*) as total FROM kepanitiaan k ${whereSql}`, params);
+        const total = countRows[0].total;
+
         const [kepanitiaan] = await db.query(`
             SELECT k.*, u.nama as user_name 
             FROM kepanitiaan k 
             JOIN users u ON k.user_id = u.id 
+            ${whereSql}
             ORDER BY k.created_at DESC
-        `);
-        res.json(kepanitiaan);
+            LIMIT ? OFFSET ?
+        `, [...params, limit, offset]);
+
+        res.json({
+            data: kepanitiaan,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });

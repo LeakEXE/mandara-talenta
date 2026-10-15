@@ -24,16 +24,61 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits: EVIDENCE_LIMITS });
 
-// Get all pelanggaran (for approvals)
+// Get all pelanggaran (for approvals) — server-side pagination + filters
 router.get('/all', auth, async (req, res) => {
     try {
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
+        const offset = (page - 1) * limit;
+
+        const where = [];
+        const params = [];
+
+        if (req.query.search) {
+            where.push('(p.nama LIKE ? OR p.nis LIKE ? OR p.keterangan LIKE ? OR p.jenis_pelanggaran LIKE ? OR p.status LIKE ?)');
+            const q = `%${req.query.search}%`;
+            params.push(q, q, q, q, q);
+        }
+        if (req.query.status && req.query.status !== 'semua') {
+            where.push('p.status = ?');
+            params.push(req.query.status);
+        }
+        if (req.query.jenis_pelanggaran && req.query.jenis_pelanggaran !== 'semua') {
+            where.push('p.jenis_pelanggaran = ?');
+            params.push(req.query.jenis_pelanggaran);
+        }
+        if (req.query.date_from) {
+            where.push('p.created_at >= ?');
+            params.push(req.query.date_from);
+        }
+        if (req.query.date_to) {
+            where.push('p.created_at <= ?');
+            params.push(req.query.date_to);
+        }
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        const [countRows] = await db.query(`SELECT COUNT(*) as total FROM pelanggaran p ${whereSql}`, params);
+        const total = countRows[0].total;
+
         const [pelanggaran] = await db.query(`
             SELECT p.*, u.nama as user_name 
             FROM pelanggaran p 
             JOIN users u ON p.user_id = u.id 
+            ${whereSql}
             ORDER BY p.created_at DESC
-        `);
-        res.json(pelanggaran);
+            LIMIT ? OFFSET ?
+        `, [...params, limit, offset]);
+
+        res.json({
+            data: pelanggaran,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
