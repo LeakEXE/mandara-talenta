@@ -106,7 +106,7 @@ function InputKepanitiaan() {
         limit: limitRef.current,
         search: searchRef.current,
         status: indexStatus,
-        tingkat_kepanitiaan: indexJabatan,
+        jabatan_kepanitiaan: indexJabatan,
         date_from: indexDateFrom,
         date_to: indexDateTo,
       });

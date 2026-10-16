@@ -23,7 +23,7 @@ router.get('/all', auth, async (req, res) => {
         const params = [];
 
         if (req.query.search) {
-            where.push('(p.nama LIKE ? OR p.nis LIKE ? OR p.karakter_siswa LIKE ? OR p.status LIKE ?)');
+            where.push('(p.nama ILIKE ? OR p.nis ILIKE ? OR p.karakter_siswa ILIKE ? OR p.status ILIKE ?)');
             const q = `%${req.query.search}%`;
             params.push(q, q, q, q);
         }

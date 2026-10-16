@@ -35,7 +35,7 @@ router.get('/all', auth, async (req, res) => {
         const params = [];
 
         if (req.query.search) {
-            where.push('(k.nama LIKE ? OR k.nis LIKE ? OR k.jabatan_kepanitiaan LIKE ? OR k.tingkat_kepanitiaan LIKE ? OR k.status LIKE ?)');
+            where.push('(k.nama ILIKE ? OR k.nis ILIKE ? OR k.jabatan_kepanitiaan ILIKE ? OR k.kategori_kepanitiaan ILIKE ? OR k.status ILIKE ?)');
             const q = `%${req.query.search}%`;
             params.push(q, q, q, q, q);
         }
@@ -43,9 +43,9 @@ router.get('/all', auth, async (req, res) => {
             where.push('k.status = ?');
             params.push(req.query.status);
         }
-        if (req.query.tingkat_kepanitiaan && req.query.tingkat_kepanitiaan !== 'semua') {
-            where.push('k.tingkat_kepanitiaan = ?');
-            params.push(req.query.tingkat_kepanitiaan);
+        if (req.query.jabatan_kepanitiaan && req.query.jabatan_kepanitiaan !== 'semua') {
+            where.push('k.jabatan_kepanitiaan = ?');
+            params.push(req.query.jabatan_kepanitiaan);
         }
         if (req.query.date_from) {
             where.push('k.created_at >= ?');
