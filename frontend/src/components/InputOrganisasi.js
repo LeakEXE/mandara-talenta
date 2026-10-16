@@ -786,7 +786,6 @@ function InputOrganisasi() {
                 </div>
               </>
             )}
-            </div>
             </>
           )}
         </div>

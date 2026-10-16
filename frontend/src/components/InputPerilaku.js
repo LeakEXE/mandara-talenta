@@ -732,7 +732,6 @@ function InputPerilaku() {
                 </div>
               </>
             )}
-            </div>
             </>
           )}
         </div>

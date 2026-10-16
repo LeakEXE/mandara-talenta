@@ -629,6 +629,7 @@ function InputEvent() {
           {loadingIndex ? (
             <div className="loading"><div className="spinner"></div></div>
           ) : (
+            <>
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' }}>
               <table className="table">
                 <thead>
@@ -782,7 +783,7 @@ function InputEvent() {
                 </div>
               </>
             )}
-            </div>
+            </>
           )}
         </div>
       )}

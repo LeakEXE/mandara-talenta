@@ -777,7 +777,6 @@ function InputKepanitiaan() {
                 </div>
               </>
             )}
-            </div>
             </>
           )}
         </div>
