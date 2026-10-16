@@ -9,6 +9,7 @@ import Select from 'react-select';
 import StudentSelect from './StudentSelect';
 import FilterBar from './FilterBar';
 import SearchableTeacherSelect from './SearchableTeacherSelect';
+import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 
 function InputPrestasi() {
@@ -1449,13 +1450,31 @@ function InputPrestasi() {
 }
 
 function getStatusBadge(item) {
-  if (item.status === 'rejected') {
-    return <span className="badge badge-danger">Ditolak</span>;
-  }
-  if (item.status === 'approved') {
-    return <span className="badge badge-success">Disetujui</span>;
-  }
-  return <span className="badge badge-warning">Menunggu</span>;
+  const status = typeof item === 'string' ? item : item?.status;
+  const styles = {
+    pending: { background: 'var(--warning-color)', color: 'white' },
+    approved: { background: 'var(--success-color)', color: 'white' },
+    rejected: { background: 'var(--danger-color)', color: 'white' }
+  };
+  const labels = {
+    pending: 'Menunggu',
+    approved: 'Disetujui',
+    rejected: 'Ditolak'
+  };
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '4px 12px',
+      borderRadius: '12px',
+      fontSize: '12px',
+      fontWeight: '500',
+      ...styles[status]
+    }}>
+      <StatusIcon status={status} /> {labels[status] || status}
+    </span>
+  );
 }
 
 export default InputPrestasi;
