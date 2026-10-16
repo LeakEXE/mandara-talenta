@@ -1,8 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
-import { Folder, FileText } from 'lucide-react';
+import { Folder, FileText, LayoutGrid, LayoutList, File, Film } from 'lucide-react';
 import { EvidenceViewer, isPdfPath } from './EvidenceViewer';
+
+const getFileIcon = (fileName) => {
+  const ext = (fileName.match(/\.([^.]+)$/) || [])[1]?.toLowerCase();
+  if (ext === 'pdf') return { color: '#dc2626', bg: '#fef2f2', icon: <FileText size={20} /> };
+  if (ext === 'mp4' || ext === 'mov' || ext === 'avi' || ext === 'webm') return { color: '#7c3aed', bg: '#f5f3ff', icon: <Film size={20} /> };
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return { color: '#2563eb', bg: '#eff6ff', icon: <FileText size={20} /> };
+  return { color: '#6b7280', bg: '#f3f4f6', icon: <File size={20} /> };
+};
+
+const truncateName = (name, max = 20) => {
+  if (name.length <= max) return name;
+  const ext = name.match(/\.[^.]+$/)?.[0] || '';
+  const base = name.slice(0, name.length - ext.length);
+  return base.slice(0, max - 3 - ext.length) + '...' + ext;
+};
+
+const isImageFile = (fileName) => /\.(jpe?g|png|gif|webp)$/i.test(fileName);
+const isVideoFile = (fileName) => /\.(mp4|mov|avi|webm)$/i.test(fileName);
+const isPdfFile = (fileName) => /\.pdf$/i.test(fileName);
 
 function DriveViewer() {
   const [folders, setFolders] = useState([]);
@@ -23,6 +42,7 @@ function DriveViewer() {
     refStatus: ''
   });
   const [studentsData, setStudentsData] = useState({});
+  const [viewMode, setViewMode] = useState('list');
 
   const kelasOptions = [
     'X TKJ 1', 'X TKJ 2', 'X DPIB 1', 'X DPIB 2', 'X TKR 1', 'X TKR 2',
@@ -389,18 +409,51 @@ function DriveViewer() {
             </div>
           </div>
 
+          {/* View Toggle */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <div style={{ display: 'inline-flex', border: '1px solid #d0d0d0', borderRadius: '6px', overflow: 'hidden' }}>
+              <button
+                onClick={() => setViewMode('list')}
+                style={{
+                  padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: '13px',
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  backgroundColor: viewMode === 'list' ? 'var(--blue)' : 'white',
+                  color: viewMode === 'list' ? 'white' : '#333',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <LayoutList size={14} /> List
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                style={{
+                  padding: '6px 12px', border: 'none', cursor: 'pointer', fontSize: '13px',
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  backgroundColor: viewMode === 'grid' ? 'var(--blue)' : 'white',
+                  color: viewMode === 'grid' ? 'white' : '#333',
+                  transition: 'all 0.15s'
+                }}
+              >
+                <LayoutGrid size={14} /> Grid
+              </button>
+            </div>
+          </div>
+
           {loading ? (
             <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
           ) : filteredFiles.length === 0 ? (
             <div style={{ padding: '20px', backgroundColor: '#f5f5f5', borderRadius: '8px', textAlign: 'center' }}>
               {files.length === 0 ? 'No files in this folder' : 'No files match your filters'}
             </div>
-          ) : (
-            <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #ddd', overflow: 'hidden' }}>
+          ) : viewMode === 'list' ? (
+            <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #ddd', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ backgroundColor: 'var(--blue)', color: 'white' }}>
                     <th style={{ padding: '12px', textAlign: 'left' }}>File Name</th>
+                    {selectedFolder === 'avatars' && (
+                      <th style={{ padding: '12px', textAlign: 'left' }}>Username</th>
+                    )}
                     <th style={{ padding: '12px', textAlign: 'left' }}>Lokasi</th>
                     <th style={{ padding: '12px', textAlign: 'left' }}>Size</th>
                     <th style={{ padding: '12px', textAlign: 'left' }}>Created</th>
@@ -434,6 +487,11 @@ function DriveViewer() {
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: '500', color: '#333' }}><FileText size={14} /> {file.name}</span>
                         )}
                       </td>
+                      {selectedFolder === 'avatars' && (
+                        <td style={{ padding: '12px', color: '#666' }}>
+                          {file.username || '-'}
+                        </td>
+                      )}
                       <td style={{ padding: '12px', color: '#666' }}>
                         {file.subfolder || '-'}
                         {file.referenced === false && (
@@ -468,6 +526,109 @@ function DriveViewer() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px' }}>
+              {pagedFiles.map((file) => {
+                const iconInfo = getFileIcon(file.name);
+                return (
+                  <div
+                    key={file.path}
+                    style={{
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                      backgroundColor: 'white',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      transition: 'box-shadow 0.2s',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    {/* Thumbnail / Icon */}
+                    <div
+                      onClick={() => isViewable(file.name) && viewImage(file)}
+                      style={{
+                        height: '120px',
+                        backgroundColor: iconInfo.bg,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: isViewable(file.name) ? 'pointer' : 'default',
+                        position: 'relative',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {isImageFile(file.name) ? (
+                        <img
+                          src={`${API_BASE_URL.replace('/api', '')}${file.path}`}
+                          alt={file.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                        />
+                      ) : null}
+                      {(!isImageFile(file.name) || true) && (
+                        <div style={{ display: isImageFile(file.name) ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ color: iconInfo.color }}>{iconInfo.icon}</span>
+                          <span style={{ fontSize: '10px', fontWeight: '700', color: iconInfo.color, textTransform: 'uppercase' }}>
+                            {(file.name.match(/\.([^.]+)$/) || [])[1] || 'file'}
+                          </span>
+                        </div>
+                      )}
+                      {file.referenced === false && (
+                        <span style={{
+                          position: 'absolute', top: '6px', left: '6px',
+                          fontSize: '9px', fontWeight: '700',
+                          background: '#fef3c7', color: '#a86a05', padding: '2px 6px', borderRadius: '999px'
+                        }}>
+                          Yatim
+                        </span>
+                      )}
+                    </div>
+
+                    {/* File info */}
+                    <div style={{ padding: '10px', flex: 1 }}>
+                      <div style={{
+                        fontSize: '12px', fontWeight: '600', color: '#1f2937',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        marginBottom: '4px'
+                      }} title={file.name}>
+                        {truncateName(file.name)}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>
+                        {formatFileSize(file.size)}
+                      </div>
+                      {selectedFolder === 'avatars' && file.username && (
+                        <div style={{
+                          fontSize: '11px', color: '#2563eb', fontWeight: '500',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                        }}>
+                          {file.username}
+                        </div>
+                      )}
+                      <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                        {formatDate(file.created)}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ padding: '0 10px 10px' }}>
+                      <button
+                        onClick={() => deleteFile(file)}
+                        style={{
+                          width: '100%', padding: '6px 0',
+                          backgroundColor: 'var(--danger-color)',
+                          color: 'white', border: 'none', borderRadius: '5px',
+                          cursor: 'pointer', fontSize: '11px', fontWeight: '600'
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 

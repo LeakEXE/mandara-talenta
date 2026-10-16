@@ -25,17 +25,100 @@ const { calculatePrestasiPoints } = require('../constants/points');
 const { buildKeterangan, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, resolveStudentIdByNis } = require('../utils/ipt');
 const { normalizeTanggalPelaksanaan } = require('../utils/prestasiFields');
 
-// Get all prestasi (for approvals)
+// Get all prestasi (for approvals) — server-side pagination + filters
 router.get('/all', auth, async (req, res) => {
     try {
-        const [prestasi] = await db.query(`
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
+        const offset = (page - 1) * limit;
+
+        const where = [];
+        const params = [];
+
+        if (req.query.search) {
+            where.push('(p.nama LIKE ? OR p.nis LIKE ? OR p.nama_lomba LIKE ? OR p.jenis_lomba LIKE ? OR p.kategori_lomba LIKE ? OR p.juara LIKE ? OR p.kategori LIKE ? OR p.pembina LIKE ? OR p.status LIKE ?)');
+            const q = `%${req.query.search}%`;
+            params.push(q, q, q, q, q, q, q, q, q);
+        }
+        if (req.query.status && req.query.status !== 'semua') {
+            where.push('p.status = ?');
+            params.push(req.query.status);
+        }
+        if (req.query.jenis_lomba && req.query.jenis_lomba !== 'semua') {
+            where.push('p.jenis_lomba = ?');
+            params.push(req.query.jenis_lomba);
+        }
+        if (req.query.kategori_lomba && req.query.kategori_lomba !== 'semua') {
+            where.push('p.kategori_lomba = ?');
+            params.push(req.query.kategori_lomba);
+        }
+        if (req.query.juara && req.query.juara !== 'semua') {
+            where.push('p.juara = ?');
+            params.push(req.query.juara);
+        }
+        if (req.query.kategori && req.query.kategori !== 'semua') {
+            where.push('p.kategori = ?');
+            params.push(req.query.kategori);
+        }
+        if (req.query.date_from) {
+            where.push('p.tanggal_pelaksanaan >= ?');
+            params.push(req.query.date_from);
+        }
+        if (req.query.date_to) {
+            where.push('p.tanggal_pelaksanaan <= ?');
+            params.push(req.query.date_to);
+        }
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        // Count distinct records: individual prestasi = 1 per row, group prestasi = 1 per grup_lomba
+        const countQuery = `
+            SELECT COUNT(DISTINCT grp) as total FROM (
+                SELECT CASE 
+                    WHEN p.kategori_lomba = 'kelompok' THEN p.grup_lomba 
+                    ELSE p.id::text 
+                END as grp
+                FROM prestasi p
+                ${whereSql}
+            ) t
+        `;
+        const [countRows] = await db.query(countQuery, params);
+        const total = countRows[0].total;
+
+        // For pagination: fetch one row per group (kelompok) or per row (individu)
+        // Use ROW_NUMBER to pick the first student of each group
+        const dataQuery = `
             SELECT p.*, u.nama as user_name 
-            FROM prestasi p 
-            JOIN users u ON p.user_id = u.id 
+            FROM (
+                SELECT p.*, 
+                    ROW_NUMBER() OVER (
+                        PARTITION BY CASE 
+                            WHEN p.kategori_lomba = 'kelompok' THEN p.grup_lomba 
+                            ELSE p.id::text 
+                        END
+                        ORDER BY p.created_at DESC
+                    ) as rn
+                FROM prestasi p
+                ${whereSql}
+            ) p
+            JOIN users u ON p.user_id = u.id
+            WHERE p.rn = 1
             ORDER BY p.created_at DESC
-        `);
+            LIMIT ? OFFSET ?
+        `;
+        const [prestasi] = await db.query(dataQuery, [...params, limit, offset]);
+
         await attachPembinaLists(prestasi, 'prestasi_pembina', 'prestasi_id');
-        res.json(prestasi);
+
+        res.json({
+            data: prestasi,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });

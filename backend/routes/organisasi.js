@@ -24,16 +24,61 @@ const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits
 const { calculateOrganisasiPoints } = require('../constants/points');
 const { buildKeterangan } = require('../utils/ipt');
 
-// Get all organisasi (for approvals)
+// Get all organisasi (for approvals) — server-side pagination + filters
 router.get('/all', auth, async (req, res) => {
     try {
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
+        const offset = (page - 1) * limit;
+
+        const where = [];
+        const params = [];
+
+        if (req.query.search) {
+            where.push('(o.nama LIKE ? OR o.nis LIKE ? OR o.jabatan_organisasi LIKE ? OR o.kategori_organisasi LIKE ? OR o.status LIKE ?)');
+            const q = `%${req.query.search}%`;
+            params.push(q, q, q, q, q);
+        }
+        if (req.query.status && req.query.status !== 'semua') {
+            where.push('o.status = ?');
+            params.push(req.query.status);
+        }
+        if (req.query.kategori_organisasi && req.query.kategori_organisasi !== 'semua') {
+            where.push('o.kategori_organisasi = ?');
+            params.push(req.query.kategori_organisasi);
+        }
+        if (req.query.date_from) {
+            where.push('o.created_at >= ?');
+            params.push(req.query.date_from);
+        }
+        if (req.query.date_to) {
+            where.push('o.created_at <= ?');
+            params.push(req.query.date_to);
+        }
+
+        const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+        const [countRows] = await db.query(`SELECT COUNT(*) as total FROM organisasi o ${whereSql}`, params);
+        const total = countRows[0].total;
+
         const [organisasi] = await db.query(`
             SELECT o.*, u.nama as user_name 
             FROM organisasi o 
             JOIN users u ON o.user_id = u.id 
+            ${whereSql}
             ORDER BY o.created_at DESC
-        `);
-        res.json(organisasi);
+            LIMIT ? OFFSET ?
+        `, [...params, limit, offset]);
+
+        res.json({
+            data: organisasi,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
