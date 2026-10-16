@@ -11,7 +11,8 @@
     "db:setup": "node scripts/setupDb.js",
     "migrate:usernames": "node scripts/migrateUsernamesToLetters.js",
     "passwords:reset-staff": "node scripts/bulkResetStaffPasswords.js",
-    "data:reset-records": "node scripts/resetAllRecords.js"
+    "data:reset-records": "node scripts/resetAllRecords.js",
+    "data:seed-test": "node scripts/seedTestRecords.js"
   },
   "dependencies": {
     "@pm2/io": "^6.1.0",

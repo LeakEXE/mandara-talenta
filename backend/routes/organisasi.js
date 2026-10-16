@@ -35,7 +35,7 @@ router.get('/all', auth, async (req, res) => {
         const params = [];
 
         if (req.query.search) {
-            where.push('(o.nama LIKE ? OR o.nis LIKE ? OR o.jabatan_organisasi LIKE ? OR o.kategori_organisasi LIKE ? OR o.status LIKE ?)');
+            where.push('(o.nama ILIKE ? OR o.nis ILIKE ? OR o.jabatan_organisasi ILIKE ? OR o.kategori_organisasi ILIKE ? OR o.status ILIKE ?)');
             const q = `%${req.query.search}%`;
             params.push(q, q, q, q, q);
         }
@@ -43,9 +43,9 @@ router.get('/all', auth, async (req, res) => {
             where.push('o.status = ?');
             params.push(req.query.status);
         }
-        if (req.query.kategori_organisasi && req.query.kategori_organisasi !== 'semua') {
-            where.push('o.kategori_organisasi = ?');
-            params.push(req.query.kategori_organisasi);
+        if (req.query.jabatan_organisasi && req.query.jabatan_organisasi !== 'semua') {
+            where.push('o.jabatan_organisasi = ?');
+            params.push(req.query.jabatan_organisasi);
         }
         if (req.query.date_from) {
             where.push('o.created_at >= ?');

@@ -3,9 +3,9 @@ import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { getRecordPhotoUrl } from '../utils/recordPhoto';
 import { formatDisplayText, formatTanggalLomba } from '../utils/formatDisplayText';
-import { EvidenceViewer } from './EvidenceViewer';
+import { EvidenceViewer, isPdfPath } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
-import { User, Paperclip } from 'lucide-react';
+import { User, FileText, Paperclip } from 'lucide-react';
 
 function PembinaRecordModal({ teacher, totalPoint, onClose }) {
   const [items, setItems] = useState(null);
@@ -94,13 +94,24 @@ function PembinaRecordModal({ teacher, totalPoint, onClose }) {
                 return (
                   <div key={group.groupId || first.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                     {fotoUrl && (
-                      <img
-                        src={fotoUrl}
-                        alt="Bukti"
-                        onClick={() => setEvidenceImage(first.foto)}
-                        title="Klik untuk memperbesar"
-                        style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0' }}
-                      />
+                      isPdfPath(first.foto) ? (
+                        <div
+                          onClick={() => setEvidenceImage(first.foto)}
+                          title="Klik untuk melihat PDF"
+                          style={{ width: 64, height: 64, borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: '#dc2626' }}
+                        >
+                          <FileText size={24} />
+                          <span style={{ fontSize: '9px', fontWeight: 700 }}>PDF</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={fotoUrl}
+                          alt="Bukti"
+                          onClick={() => setEvidenceImage(first.foto)}
+                          title="Klik untuk memperbesar"
+                          style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0' }}
+                        />
+                      )
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '2px' }}>

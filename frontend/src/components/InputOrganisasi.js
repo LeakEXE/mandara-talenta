@@ -131,7 +131,7 @@ function InputOrganisasi() {
         limit: limitRef.current,
         search: searchRef.current,
         status: indexStatus,
-        kategori_organisasi: indexJabatan,
+        jabatan_organisasi: indexJabatan,
         date_from: indexDateFrom,
         date_to: indexDateTo,
       });
@@ -786,7 +786,6 @@ function InputOrganisasi() {
                 </div>
               </>
             )}
-            </div>
             </>
           )}
         </div>

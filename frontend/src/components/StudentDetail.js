@@ -9,6 +9,10 @@ import { CATEGORY_ICONS } from './icons';
 import { User, Pencil, FileText, History, Paperclip } from 'lucide-react';
 
 function getIptDetailRows(points = {}) {
+  // Backend stores pelanggaran buckets already negative (point_dikurangi:
+  // -1, -5, -25), so no negation here - negating would flip them positive.
+  const pelanggaranTotal = ['pelanggaran_ringan', 'pelanggaran_sedang', 'pelanggaran_berat', 'pelanggaran_lainnya']
+    .reduce((sum, key) => sum + (Number(points[key]) || 0), 0);
   return [
     ['Prestasi', Number(points.prestasi) || 0],
     ['Perilaku', ['tanggung_jawab', 'disiplin', 'kepedulian', 'kemandirian', 'spiritual', 'kejujuran', 'kepercayaan_diri']
@@ -16,8 +20,7 @@ function getIptDetailRows(points = {}) {
     ['Organisasi', Number(points.organisasi) || 0],
     ['Kepanitiaan', Number(points.kepanitiaan) || 0],
     ['Event', Number(points.event) || 0],
-    ['Pelanggaran', -(['pelanggaran_ringan', 'pelanggaran_sedang', 'pelanggaran_berat']
-      .reduce((sum, key) => sum + (Number(points[key]) || 0), 0))]
+    ['Pelanggaran', pelanggaranTotal > 0 ? -pelanggaranTotal : pelanggaranTotal]
   ];
 }
 
@@ -125,6 +128,14 @@ function StudentDetail({ student, onClose }) {
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Grha</div>
                     <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.grha || '-'}</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
+                    <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Jenis Kelamin</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.jenis_kelamin === 'L' ? 'Laki-laki' : student.jenis_kelamin === 'P' ? 'Perempuan' : (student.jenis_kelamin || '-')}</div>
+                  </div>
+                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
+                    <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Desil</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.desil ?? '-'}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Detail IPT</div>
