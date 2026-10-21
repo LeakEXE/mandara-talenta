@@ -126,8 +126,8 @@ function TeacherWaliKelas() {
         borderRadius: '15px',
         marginBottom: '30px'
       }}>
-        <h2 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><GraduationCap size={28} /> Dashboard Wali Kelas</h2>
-        <p style={{ margin: 0, fontSize: '18px' }}>
+        <h2 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}><GraduationCap size={28} /> Dashboard Wali Kelas</h2>
+        <p style={{ margin: 0, fontSize: '18px', color: 'rgba(255, 255, 255, 0.92)' }}>
           {classData.kelas} | Tahun Ajaran {classData.tahunAjaran}
         </p>
       </div>
