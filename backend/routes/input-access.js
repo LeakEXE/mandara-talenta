@@ -271,13 +271,13 @@ router.post('/admin/individual', auth, superAdminOnly, async (req, res) => {
             return res.status(404).json({ message: 'User tidak ditemukan' });
         }
 
-        // Pelanggaran & Perilaku are guru-only: force them off for non-guru users
-        // so students can never hold these flags (also heals previously mis-granted rows).
+        // Perilaku is guru-only: force it off for students so they can never hold
+        // this flag (also heals previously mis-granted rows). Pelanggaran may be
+        // granted to students through Izin Akun.
         // (Approval scopes live in approval_scopes now, not in permissions.)
         const sanitizedPermissions = { ...permissions };
         delete sanitizedPermissions.can_approve;
         if (userInfo[0].role !== 'guru' && userInfo[0].role !== 'pegawai') {
-            sanitizedPermissions.can_input_pelanggaran = false;
             sanitizedPermissions.can_input_perilaku = false;
         }
         
@@ -400,11 +400,11 @@ router.post('/admin/bulk', auth, superAdminOnly, async (req, res) => {
         const enableBool = enable === true || enable === 1 || enable === 'true' || enable === '1';
         const permCols = validJenis.map(j => `can_input_${j}`);
 
-        // Pelanggaran & Perilaku are guru-only input types. They must never be
-        // granted to students (matching the "(GURU ONLY)" rule in the UI and the
-        // siswa block in checkPermission/checkInputAccess). Disabling is always
+        // Perilaku is a guru-only input type. It must never be granted to
+        // students (matching the "(GURU ONLY)" rule in the UI and the siswa
+        // block in checkPermission/checkInputAccess). Disabling is always
         // allowed so admins can clean up previously mis-granted rows.
-        const isGuruOnly = jenis === 'pelanggaran' || jenis === 'perilaku';
+        const isGuruOnly = jenis === 'perilaku';
 
         let successCount = 0;
         const skippedIds = [];
@@ -438,14 +438,16 @@ router.post('/admin/bulk', auth, superAdminOnly, async (req, res) => {
                     [enableBool, user_id]
                 );
             } else {
-                // New row: selected jenis as given, everything else defaults to true
-                // except guru-only types for students, which default to false
+                // New row: selected jenis as given, everything else defaults to true.
+                // For students, perilaku (guru-only) and pelanggaran (opt-in) default
+                // to false so merely touching another toggle never grants them.
                 const values = {};
                 for (const j of validJenis) {
-                    const otherIsGuruOnly = j === 'pelanggaran' || j === 'perilaku';
+                    const defaultOffForStudent = targetRole === 'siswa'
+                        && (j === 'perilaku' || j === 'pelanggaran');
                     values[`can_input_${j}`] = (j === jenis)
                         ? enableBool
-                        : (otherIsGuruOnly && isGuruOnlyTarget ? false : true);
+                        : (defaultOffForStudent ? false : true);
                 }
                 await db.query(
                     `INSERT INTO permissions (user_id, ${permCols.join(', ')})

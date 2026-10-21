@@ -127,7 +127,7 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
     { path: '/input-kepanitiaan', label: 'Kepanitiaan', show: true },
     { path: '/input-event', label: 'Event', show: true },
     // Pelanggaran and Perilaku: superadmin always has access, guru needs permission
-    { path: '/input-pelanggaran', label: 'Pelanggaran', show: user?.role === 'superadmin' || ((user?.role === 'guru' || user?.role === 'pegawai') && permissions?.can_input_pelanggaran) },
+    { path: '/input-pelanggaran', label: 'Pelanggaran', show: user?.role === 'superadmin' || ((user?.role === 'siswa' || user?.role === 'guru' || user?.role === 'pegawai') && permissions?.can_input_pelanggaran) },
     { path: '/input-perilaku', label: 'Perilaku', show: user?.role === 'superadmin' || ((user?.role === 'guru' || user?.role === 'pegawai') && permissions?.can_input_perilaku) },
     // Kelola Akun for superadmin
     { path: '/kelola-akun', label: 'Kelola Akun', show: user?.role === 'superadmin' },

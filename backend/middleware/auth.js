@@ -107,13 +107,14 @@ const checkPermission = (permissionType) => {
         return next();
       }
       
-      // For students, they don't have access to pelanggaran/perilaku
-      if (userRole === 'siswa' && (permissionType === 'pelanggaran' || permissionType === 'perilaku')) {
+      // Perilaku stays guru/pegawai-only; pelanggaran may also be granted to students.
+      if (userRole === 'siswa' && permissionType === 'perilaku') {
         return res.status(403).json({ message: 'Anda tidak memiliki izin untuk mengakses halaman ini.' });
       }
       
-      // For teachers and pegawai, check individual permission
-      if ((userRole === 'guru' || userRole === 'pegawai') && (permissionType === 'pelanggaran' || permissionType === 'perilaku')) {
+      // For pelanggaran/perilaku, require an explicit individual permission
+      // (applies to students as well as teachers/pegawai).
+      if (permissionType === 'pelanggaran' || permissionType === 'perilaku') {
         const [permissions] = await db.query(
           `SELECT can_input_${permissionType} as has_permission FROM permissions WHERE user_id = ?`,
           [userId]
@@ -229,13 +230,18 @@ const checkInputAccess = (jenisInput) => {
         return next();
       }
       
-      // Students never get access to pelanggaran/perilaku (guru-only input),
-      // mirroring checkPermission above regardless of any stored permission flags.
-      if (userRole === 'siswa' && (jenisInput === 'pelanggaran' || jenisInput === 'perilaku')) {
+      // Perilaku stays guru/pegawai-only regardless of any stored permission flags.
+      if (userRole === 'siswa' && jenisInput === 'perilaku') {
         return res.status(403).json({ 
           message: `Anda tidak memiliki izin untuk input data ${jenisInput}. Silakan hubungi SuperAdmin.` 
         });
       }
+
+      // Pelanggaran is opt-in for students: it must be granted explicitly as an
+      // individual permission in Izin Akun. A missing/neutral individual flag does
+      // NOT fall through to the role/global switch, so students never receive it
+      // by default (new accounts included).
+      const requiresIndividualGrant = userRole === 'siswa' && jenisInput === 'pelanggaran';
       
       // Check global access status
       const [globalControl] = await db.query(
@@ -268,6 +274,9 @@ const checkInputAccess = (jenisInput) => {
       } else if (permValue === false || permValue === 0) {
         hasAccess = false;
         accessSource = 'individual';
+      } else if (requiresIndividualGrant) {
+        hasAccess = false;
+        accessSource = 'individual-required';
       } else if (roleControl.length > 0) {
         hasAccess = roleControl[0].is_enabled;
         accessSource = 'role';
