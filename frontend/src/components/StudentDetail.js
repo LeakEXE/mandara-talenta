@@ -4,6 +4,7 @@ import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import { formatDisplayText } from '../utils/formatDisplayText';
 import { buildEvidenceMap } from '../utils/historyEvidence';
+import { formatDesil } from '../utils/desil';
 import { EvidenceViewer } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
 import { User, Pencil, FileText, History, Paperclip } from 'lucide-react';
@@ -29,6 +30,9 @@ function StudentDetail({ student, onClose }) {
     const [records, setRecords] = useState(null);
     const [iptHistory, setIptHistory] = useState([]);
     const [iptCard, setIptCard] = useState(null);
+    // The list row can be stale (e.g. right after an edit), so the modal
+    // re-reads the student's own record and merges it over the prop.
+    const [freshStudent, setFreshStudent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [evidenceImage, setEvidenceImage] = useState(null);
@@ -38,12 +42,15 @@ function StudentDetail({ student, onClose }) {
 
         const fetchData = async () => {
             try {
-                const [recordsRes, historyRes] = await Promise.all([
+                setFreshStudent(null);
+                const [recordsRes, historyRes, studentRes] = await Promise.all([
                     api.get(`/users/${student.id}/records`),
-                    api.get(`/users/${student.id}/ipt-history`)
+                    api.get(`/users/${student.id}/ipt-history`),
+                    api.get(`/users/${student.id}`).catch(() => null)
                 ]);
                 setRecords(recordsRes.data);
                 setIptHistory(historyRes.data || []);
+                if (studentRes?.data) setFreshStudent(studentRes.data);
                 const iptCardRes = await api.get(`/reports/ipt-card/${student.id}`);
                 setIptCard(iptCardRes.data);
             } catch (err) {
@@ -55,6 +62,8 @@ function StudentDetail({ student, onClose }) {
 
         fetchData();
     }, [student?.id]);
+
+    const studentData = freshStudent ? { ...student, ...freshStudent } : student;
 
     // Evidence photo per history row, matched by exact keterangan text.
     const evidenceMap = useMemo(() => buildEvidenceMap(records), [records]);
@@ -86,8 +95,8 @@ function StudentDetail({ student, onClose }) {
         return `${baseUrl}${imagePath}`;
     };
 
-    const avatarUrl = getImageUrl(student?.foto);
-    const detailRows = getIptDetailRows(student?.ipt_points || iptCard?.points || {});
+    const avatarUrl = getImageUrl(studentData?.foto);
+    const detailRows = getIptDetailRows(studentData?.ipt_points || iptCard?.points || {});
 
     return (
         <div className="modal-overlay app-modal-overlay" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1500 }} onClick={(e) => { if (e.target === e.currentTarget) { onClose(); setEvidenceImage(null); } }}>
@@ -96,7 +105,7 @@ function StudentDetail({ student, onClose }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fff', border: '2px solid #2563eb', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', overflow: 'hidden' }}>
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt={student.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={avatarUrl} alt={studentData.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <User size={16} />
                   )}
@@ -115,27 +124,27 @@ function StudentDetail({ student, onClose }) {
                 <>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Nama</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.nama}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{studentData.nama}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>NIS</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.nis}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{studentData.nis}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Username</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.username || '-'}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{studentData.username || '-'}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Grha</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.grha || '-'}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{studentData.grha || '-'}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Jenis Kelamin</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.jenis_kelamin === 'L' ? 'Laki-laki' : student.jenis_kelamin === 'P' ? 'Perempuan' : (student.jenis_kelamin || '-')}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{studentData.jenis_kelamin === 'L' ? 'Laki-laki' : studentData.jenis_kelamin === 'P' ? 'Perempuan' : (studentData.jenis_kelamin || '-')}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Desil</div>
-                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{student.desil ?? '-'}</div>
+                    <div style={{ fontSize: '.95rem', fontWeight: 600, color: '#0f172a' }}>{formatDesil(studentData.desil, 'Tidak terdata')}</div>
                   </div>
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Detail IPT</div>
@@ -216,7 +225,7 @@ function StudentDetail({ student, onClose }) {
 
                   <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '12px 16px' }}>
                     <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#64748b', marginBottom: '4px' }}>Total IPT</div>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '50%', background: isBelowMinIpt(student.ipt_total || 80, minIptFor(minIpt, student?.kelas)) ? '#dc2626' : '#0891b2', color: '#fff', fontWeight: 700, fontSize: '1rem' }}>{student.ipt_total || 80}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '44px', height: '44px', borderRadius: '50%', background: isBelowMinIpt(studentData.ipt_total || 80, minIptFor(minIpt, studentData?.kelas)) ? '#dc2626' : '#0891b2', color: '#fff', fontWeight: 700, fontSize: '1rem' }}>{studentData.ipt_total || 80}</span>
                   </div>
                 </>
               )}

@@ -1240,19 +1240,23 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
                 return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
             }
 
-            // Welfare fields are superadmin-only (official DTSEN data):
-            // staff editing siswa targets must not send them at all.
-            let newGender = user[0].jenis_kelamin ?? null;
-            let newDesil = user[0].desil ?? null;
+            // Welfare fields are superadmin-only (official DTSEN data). The
+            // edit form resends them on every save (unchanged values too), so
+            // the gate may only fire when a value really changes — otherwise
+            // every guru/pegawai biodata save would 403 on unchanged fields.
+            const currentGender = user[0].jenis_kelamin ?? null;
+            const currentDesil = user[0].desil ?? null;
+            let newGender = currentGender;
+            let newDesil = currentDesil;
             if (jenis_kelamin !== undefined || desil !== undefined) {
-                if (req.user.role !== 'superadmin') {
-                    return res.status(403).json({ message: 'Hanya superadmin yang dapat mengubah jenis kelamin/desil' });
-                }
                 try {
                     if (jenis_kelamin !== undefined) newGender = normalizeGender(jenis_kelamin).value;
                     if (desil !== undefined) newDesil = normalizeDesil(desil).value;
                 } catch (err) {
                     return res.status(err.statusCode || 400).json({ message: err.message });
+                }
+                if (req.user.role !== 'superadmin' && (newGender !== currentGender || newDesil !== currentDesil)) {
+                    return res.status(403).json({ message: 'Hanya superadmin yang dapat mengubah jenis kelamin/desil' });
                 }
             }
 

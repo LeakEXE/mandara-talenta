@@ -438,8 +438,14 @@ function KelolaAkun() {
         await api.put(`/users/${editStudent.id}/username`, { username: newUsername });
       }
       // Biodata edits apply directly, no approval needed (guru/pegawai may
-      // only touch siswa targets enforced server-side too).
-      await api.put(`/users/${editStudent.id}/biodata`, formData);
+      // only touch siswa targets enforced server-side too). Welfare fields
+      // are superadmin-only, so don't send them at all from staff sessions.
+      const payload = { ...formData };
+      if (userRole !== 'superadmin') {
+        delete payload.jenis_kelamin;
+        delete payload.desil;
+      }
+      await api.put(`/users/${editStudent.id}/biodata`, payload);
       setMessage(`Data ${editStudent.role === 'siswa' ? 'siswa' : 'guru'} berhasil diupdate!`);
       
       setShowEditBiodataModal(false);
@@ -1912,22 +1918,37 @@ function KelolaAkun() {
                   </div>
                   <div className="form-group">
                     <label>Jenis Kelamin</label>
-                    <select value={formData.jenis_kelamin || ''} onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}>
+                    <select
+                      value={formData.jenis_kelamin || ''}
+                      onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}
+                      disabled={userRole !== 'superadmin'}
+                    >
                       <option value="" disabled hidden>Pilih Jenis Kelamin</option>
                       {GENDER_OPTIONS.map(g => (
                         <option key={g.value} value={g.value}>{g.label}</option>
                       ))}
                     </select>
+                    {userRole !== 'superadmin' && (
+                      <small style={{ color: '#666', fontSize: '12px' }}>Hanya superadmin yang dapat mengubah jenis kelamin.</small>
+                    )}
                   </div>
                   <div className="form-group">
                     <label>Desil Kesejahteraan</label>
-                    <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
+                    <select
+                      value={formData.desil ?? ''}
+                      onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}
+                      disabled={userRole !== 'superadmin'}
+                    >
                       <option value="">Tidak terdata</option>
                       {DESIL_OPTIONS.map(d => (
                         <option key={d.value} value={d.value}>{d.label}</option>
                       ))}
                     </select>
-                    <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
+                    <small style={{ color: '#666', fontSize: '12px' }}>
+                      {userRole !== 'superadmin'
+                        ? 'Hanya superadmin yang dapat mengubah desil.'
+                        : "Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data."}
+                    </small>
                   </div>
                   <div className="form-group">
                     <label>Tahun Pelajaran (Masuk)</label>
