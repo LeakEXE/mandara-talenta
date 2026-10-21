@@ -466,7 +466,7 @@
 .student-progress { height: 8px; border-radius: 99px; background: var(--border-color); overflow: hidden; margin: 10px 0 14px; }
 .student-progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), var(--teal)); border-radius: 99px; }
 .student-progress.is-low > span { background: linear-gradient(90deg, var(--danger-color), var(--warning-color)); }
-.student-details { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+.student-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; background: #fff; padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; }
 .detail-item { display: flex; flex-direction: column; gap: 4px; background: #fff; border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 12px; }
 .detail-label { font-size: 11px; font-weight: 700; color: var(--slate); text-transform: uppercase; letter-spacing: .05em; }
 .detail-value { font-size: 14px; font-weight: 600; color: var(--ink); }
@@ -486,7 +486,6 @@
 @media (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .kpi-strip { grid-template-columns: repeat(4, 1fr); }
-  .student-details { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 768px) {
   .dash-page { padding: 0 0 32px; }
