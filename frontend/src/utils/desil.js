@@ -20,3 +20,12 @@ export function formatDesil(value, emptyLabel = 'Tidak terdata') {
   if (!Number.isInteger(n) || n < 1 || n > 10) return emptyLabel;
   return `${n} - ${DESIL_LABELS[n]}`;
 }
+
+// Select options for editors (superadmin + wali kelas). Empty value = NULL.
+export const DESIL_OPTIONS = [
+  { value: '', label: 'Tidak terdata' },
+  ...Object.entries(DESIL_LABELS).map(([value, label]) => ({
+    value: Number(value),
+    label: `${value} - ${label}`
+  }))
+];

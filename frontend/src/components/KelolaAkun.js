@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import StudentDetail from './StudentDetail';
 import { GRHA_OPTIONS, getRowField, normalizeGrha } from '../utils/excelImport';
 import { styleImportTemplateSheet } from '../utils/excelTemplate';
+import { DESIL_OPTIONS } from '../utils/desil';
 import { Plus, Download, CircleCheck, CircleX, BookOpen, Lightbulb } from 'lucide-react';
 
 const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
@@ -13,20 +14,6 @@ const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
 const GENDER_OPTIONS = [
   { value: 'L', label: 'L - Laki-laki' },
   { value: 'P', label: 'P - Perempuan' },
-];
-
-// Desil DTSEN (BPS/Kemensos): 1 = kesejahteraan terendah, 10 = tertinggi.
-const DESIL_OPTIONS = [
-  { value: 1, label: '1 - Sangat miskin' },
-  { value: 2, label: '2 - Miskin' },
-  { value: 3, label: '3 - Hampir miskin' },
-  { value: 4, label: '4 - Rentan miskin' },
-  { value: 5, label: '5 - Menengah bawah' },
-  { value: 6, label: '6 - Menengah' },
-  { value: 7, label: '7 - Menengah' },
-  { value: 8, label: '8 - Menengah atas' },
-  { value: 9, label: '9 - Kaya' },
-  { value: 10, label: '10 - Sangat kaya' },
 ];
 
 const EXPORT_COLUMNS = [
@@ -1548,9 +1535,8 @@ function KelolaAkun() {
                 <div className="form-group">
                   <label>Desil Kesejahteraan</label>
                   <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
-                    <option value="">Tidak terdata</option>
                     {DESIL_OPTIONS.map(d => (
-                      <option key={d.value} value={d.value}>{d.label}</option>
+                      <option key={d.value || 'none'} value={d.value}>{d.label}</option>
                     ))}
                   </select>
                   <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
@@ -1939,9 +1925,8 @@ function KelolaAkun() {
                       onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}
                       disabled={userRole !== 'superadmin'}
                     >
-                      <option value="">Tidak terdata</option>
                       {DESIL_OPTIONS.map(d => (
-                        <option key={d.value} value={d.value}>{d.label}</option>
+                        <option key={d.value || 'none'} value={d.value}>{d.label}</option>
                       ))}
                     </select>
                     <small style={{ color: '#666', fontSize: '12px' }}>
