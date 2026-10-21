@@ -16,6 +16,7 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [schoolConfig, setSchoolConfig] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -159,10 +160,11 @@ function Login() {
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            {schoolConfig?.logo_url ? (
+            {!logoError ? (
               <img
-                src={schoolConfig.logo_url}
+                src="/login_logo.png"
                 alt="Logo Sekolah"
+                onError={() => setLogoError(true)}
                 style={{
                   maxWidth: '64px',
                   maxHeight: '64px',

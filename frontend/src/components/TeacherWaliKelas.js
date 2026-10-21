@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
+import { DESIL_OPTIONS } from '../utils/desil';
 import { GraduationCap, TriangleAlert, ClipboardList } from 'lucide-react';
 import StudentDetail from './StudentDetail';
 
@@ -11,6 +12,7 @@ function TeacherWaliKelas() {
   const [error, setError] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showStudentDetail, setShowStudentDetail] = useState(false);
+  const [savingDesilId, setSavingDesilId] = useState(null);
 
   useEffect(() => {
     fetchMyClass();
@@ -32,6 +34,37 @@ function TeacherWaliKelas() {
     // StudentDetail fetches its own records/history/IPT card.
     setSelectedStudent(student);
     setShowStudentDetail(true);
+  };
+
+  // Desil is editable here (wali kelas of this class) and by superadmin.
+  // Payload '' clears the field; the backend re-checks class membership.
+  const handleDesilChange = async (student, rawValue) => {
+    const previous = student.desil ?? null;
+    const next = rawValue === '' ? null : Number(rawValue);
+    if (next === previous) return;
+
+    setSavingDesilId(student.id);
+    setClassData(prev => prev && ({
+      ...prev,
+      students: prev.students.map(s => s.id === student.id ? { ...s, desil: next } : s)
+    }));
+
+    try {
+      const response = await api.put(`/users/${student.id}/desil`, { desil: next });
+      const saved = response.data?.desil ?? null;
+      setClassData(prev => prev && ({
+        ...prev,
+        students: prev.students.map(s => s.id === student.id ? { ...s, desil: saved } : s)
+      }));
+    } catch (err) {
+      setClassData(prev => prev && ({
+        ...prev,
+        students: prev.students.map(s => s.id === student.id ? { ...s, desil: previous } : s)
+      }));
+      alert(err.response?.data?.message || 'Gagal menyimpan desil');
+    } finally {
+      setSavingDesilId(null);
+    }
   };
 
   const getIptColor = (ipt) => {
@@ -93,8 +126,8 @@ function TeacherWaliKelas() {
         borderRadius: '15px',
         marginBottom: '30px'
       }}>
-        <h2 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><GraduationCap size={28} /> Dashboard Wali Kelas</h2>
-        <p style={{ margin: 0, fontSize: '18px' }}>
+        <h2 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}><GraduationCap size={28} /> Dashboard Wali Kelas</h2>
+        <p style={{ margin: 0, fontSize: '18px', color: 'rgba(255, 255, 255, 0.92)' }}>
           {classData.kelas} | Tahun Ajaran {classData.tahunAjaran}
         </p>
       </div>
@@ -220,6 +253,7 @@ function TeacherWaliKelas() {
                 <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--border-color)' }}>Organisasi</th>
                 <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--border-color)' }}>Pelanggaran</th>
                 <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--border-color)' }}>IPT</th>
+                <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--border-color)' }}>Desil</th>
                 <th style={{ padding: '12px', textAlign: 'center', borderBottom: '2px solid var(--border-color)' }}>Aksi</th>
               </tr>
             </thead>
@@ -287,6 +321,28 @@ function TeacherWaliKelas() {
                     }}>
                       {student.ipt_total || 80}
                     </span>
+                  </td>
+                  <td style={{ padding: '12px', textAlign: 'center' }}>
+                    <select
+                      aria-label={`Desil ${student.nama}`}
+                      value={student.desil ?? ''}
+                      disabled={savingDesilId === student.id}
+                      onChange={(e) => handleDesilChange(student, e.target.value)}
+                      style={{
+                        padding: '4px 6px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-primary)',
+                        color: student.desil ? 'var(--ink)' : 'var(--slate)',
+                        fontSize: '12px',
+                        maxWidth: '160px',
+                        cursor: savingDesilId === student.id ? 'wait' : 'pointer'
+                      }}
+                    >
+                      {DESIL_OPTIONS.map(option => (
+                        <option key={option.value || 'none'} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
                   </td>
                   <td style={{ padding: '12px', textAlign: 'center' }}>
                     <button

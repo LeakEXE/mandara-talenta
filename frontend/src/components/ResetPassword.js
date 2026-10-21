@@ -288,8 +288,26 @@ function ResetPassword() {
       </div>
 
       {selected && (
-        <div className="card" style={{ marginBottom: '24px' }}>
-          <h3>Reset password: {selected.nama} ({selected.username || idLabel(selected)})</h3>
+        <div
+          className="app-modal-overlay"
+          onClick={() => { if (!submitting) setSelected(null); }}
+          style={{
+            position: 'fixed', top: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1500
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+              borderRadius: 'var(--card-radius, 12px)', boxShadow: '0 12px 30px -10px rgba(0,0,0,.4)',
+              width: '480px', maxWidth: '90%', padding: '24px'
+            }}
+          >
+          <h3 style={{ fontSize: '18px', fontWeight: '700', margin: '0 0 12px' }}>
+            Reset password: {selected.nama} ({selected.username || idLabel(selected)})
+          </h3>
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label>Password Sementara</label>
@@ -325,9 +343,12 @@ function ResetPassword() {
                 required
               />
             </div>
-            <button type="submit" className="btn btn-danger">Reset Password</button>
-            <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Batal</button>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Batal</button>
+              <button type="submit" className="btn btn-danger">Reset Password</button>
+            </div>
           </form>
+          </div>
         </div>
       )}
 
@@ -336,9 +357,9 @@ function ResetPassword() {
           className="app-modal-overlay"
           onClick={() => { if (!submitting) setShowConfirmModal(false); }}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            position: 'fixed', top: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', zIndex: 1500
+            alignItems: 'center', justifyContent: 'center', zIndex: 1600
           }}
         >
           <div
@@ -373,7 +394,7 @@ function ResetPassword() {
           className="app-modal-overlay"
           onClick={() => { if (!reqSubmitting) setReqTarget(null); }}
           style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            position: 'fixed', top: 0, right: 0, bottom: 0,
             backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', zIndex: 1500
           }}

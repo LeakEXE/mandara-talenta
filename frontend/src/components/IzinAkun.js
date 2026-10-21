@@ -31,8 +31,9 @@ function IzinAkun() {
     { key: 'perilaku', label: 'Perilaku', icon: CATEGORY_ICONS.perilaku }
   ];
 
-  // Pelanggaran & Perilaku are guru-only (students never receive these permissions)
-  const GURU_ONLY_KEYS = ['pelanggaran', 'perilaku'];
+  // Perilaku is guru-only (students never receive this permission).
+  // Pelanggaran may be granted to students (opt-in, default off).
+  const GURU_ONLY_KEYS = ['perilaku'];
 
   const kelasOptions = [
     'X TKJ 1', 'X TKJ 2', 'X TKR 1', 'X TKR 2',
@@ -335,7 +336,7 @@ function IzinAkun() {
     // selection (guru + siswa) cannot use the enable buttons at all
     // deselect the siswa first. The backend enforces the same rule.
     if (enable && GURU_ONLY_KEYS.includes(jenis) && !onlyGuruSelected) {
-      setMessage('⚠️ Pelanggaran & Perilaku hanya dapat diaktifkan untuk guru saja - hapus siswa dari pilihan Anda terlebih dahulu');
+      setMessage('⚠️ Perilaku hanya dapat diaktifkan untuk guru saja - hapus siswa dari pilihan Anda terlebih dahulu');
       setTimeout(() => setMessage(''), 4000);
       return;
     }
@@ -351,7 +352,7 @@ function IzinAkun() {
       });
 
       const skippedSiswa = response.data.skipped_siswa_count || 0;
-      const skipNote = skippedSiswa > 0 ? ` (${skippedSiswa} siswa dilewati - khusus guru)` : '';
+      const skipNote = skippedSiswa > 0 ? ` (${skippedSiswa} siswa dilewati - perilaku khusus guru)` : '';
       setMessage(`✅ ${jenisLabel} ${enable ? 'diaktifkan' : 'dimatikan'} untuk ${response.data.success_count} user terpilih!${skipNote}`);
       await fetchUsers(); // Refresh user list (also clears selection)
       setTimeout(() => setMessage(''), 3000);
@@ -876,7 +877,7 @@ function IzinAkun() {
                     <th className="col-organisasi"><span className="th-ic"><CategoryIcon name="organisasi" size={14} /></span>Organisasi</th>
                     <th className="col-kepanitiaan"><span className="th-ic"><CategoryIcon name="kepanitiaan" size={14} /></span>Kepanitiaan</th>
                     <th className="col-event"><span className="th-ic"><CategoryIcon name="event" size={14} /></span>Event</th>
-                    <th className="col-pelanggaran"><span className="th-ic"><CategoryIcon name="pelanggaran" size={14} /></span>Pelanggaran<br/><span style={{ fontWeight: 500 }}>(GURU ONLY)</span></th>
+                    <th className="col-pelanggaran"><span className="th-ic"><CategoryIcon name="pelanggaran" size={14} /></span>Pelanggaran</th>
                     <th className="col-perilaku"><span className="th-ic"><CategoryIcon name="perilaku" size={14} /></span>Perilaku<br/><span style={{ fontWeight: 500 }}>(GURU ONLY)</span></th>
                     <th className="col-approval"><span className="th-ic"><BadgeCheck size={14} /></span>Approval<br/><span style={{ fontWeight: 500 }}>(GURU ONLY)</span></th>
                   </tr>
@@ -904,7 +905,7 @@ function IzinAkun() {
                       <td>
                         <span className="role-pill">{user.role}</span>
                       </td>
-                      {/* Siswa only sees prestasi, organisasi, kepanitiaan, event (no pelanggaran/perilaku) */}
+                      {/* Siswa: prestasi, organisasi, kepanitiaan, event, and opt-in pelanggaran (no perilaku) */}
                       {user.role === 'siswa' ? (
                         <>
                           <td>
@@ -939,8 +940,16 @@ function IzinAkun() {
                               {user.can_input_event ? '✓' : '✕'}
                             </button>
                           </td>
-                          <td style={{ color: '#94a3b8' }}>-</td>
-                          <td style={{ color: '#94a3b8' }}>-</td>
+                          <td>
+                            <button
+                              onClick={() => handleIndividualToggle(user, 'pelanggaran')}
+                              className={`toggle-cell ${user.can_input_pelanggaran ? 'on' : 'off'}`}
+                              title="Izinkan siswa ini mengajukan data pelanggaran (masuk antrean approval)"
+                            >
+                              {user.can_input_pelanggaran ? '✓' : '✕'}
+                            </button>
+                          </td>
+                          <td style={{ color: '#94a3b8' }} title="Perilaku hanya untuk guru">-</td>
                           <td style={{ color: '#94a3b8' }} title="Siswa tidak dapat memiliki Izin Approval">-</td>
                         </>
                       ) : user.role === 'superadmin' ? (

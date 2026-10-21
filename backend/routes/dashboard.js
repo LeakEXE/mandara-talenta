@@ -18,7 +18,8 @@ router.get('/stats', auth, async (req, res) => {
             [pelanggaranByKelas],
             [activityCounts],
             [iptStats],
-            [topIptStudents]
+            [topIptStudents],
+            [byDesil]
         ] = await Promise.all([
             // Total students
             db.query("SELECT COUNT(*) as count FROM users WHERE role = 'siswa'"),
@@ -102,6 +103,14 @@ router.get('/stats', auth, async (req, res) => {
                 WHERE role = 'siswa' AND is_graduated = 0 AND ipt_total IS NOT NULL
                 ORDER BY ipt_total DESC
                 LIMIT 5
+            `),
+
+            // Desil distribution (active students). desil NULL = belum terdata.
+            db.query(`
+                SELECT desil, COUNT(*) as count
+                FROM users
+                WHERE role = 'siswa' AND (is_graduated = 0 OR is_graduated IS NULL)
+                GROUP BY desil
             `)
         ]);
 
@@ -127,7 +136,8 @@ router.get('/stats', auth, async (req, res) => {
                 tertinggi: iptStats[0].tertinggi || 0,
                 terendah: iptStats[0].terendah || 0
             },
-            top_ipt_students: topIptStudents
+            top_ipt_students: topIptStudents,
+            by_desil: byDesil
         });
     } catch (error) {
         console.error(error);

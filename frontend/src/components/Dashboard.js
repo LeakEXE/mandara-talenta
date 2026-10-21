@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
+import { formatDesil } from '../utils/desil';
 import {
   BarChart,
   Bar,
@@ -94,6 +95,28 @@ function Dashboard() {
     () => (stats?.by_grha || []).reduce((sum, g) => sum + (g.count || 0), 0),
     [stats]
   );
+
+  // Full 1-10 desil buckets (zero-filled) plus the "belum terdata" total, so
+  // the chart always shows one bar per desil even while data is missing.
+  const desilDistribution = useMemo(() => {
+    const counts = new Map();
+    let unknown = 0;
+    (stats?.by_desil || []).forEach((row) => {
+      const count = Number(row.count) || 0;
+      if (row.desil === null || row.desil === undefined) {
+        unknown = count;
+      } else {
+        counts.set(Number(row.desil), count);
+      }
+    });
+    return {
+      bars: Array.from({ length: 10 }, (_, i) => ({
+        desil: i + 1,
+        count: counts.get(i + 1) || 0
+      })),
+      unknown
+    };
+  }, [stats]);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -327,7 +350,8 @@ function Dashboard() {
               ['NIS', user?.nis || '-'],
               ['Kelas', user?.kelas || '-'],
               ['Grha', user?.grha || '-'],
-              ['Jurusan', user?.jurusan || '-']
+              ['Jurusan', user?.jurusan || '-'],
+              ['Desil', formatDesil(user?.desil)]
             ].map(([label, value]) => (
               <div className="detail-item" key={label}>
                 <span className="detail-label">{label}</span>
@@ -624,6 +648,32 @@ function Dashboard() {
                 </div>
               </>
             )}
+
+            <div className="chart-box chart-span" style={{ animationDelay: '0.23s' }}>
+              <h4>Distribusi Desil Siswa</h4>
+              <p className="chart-sub">
+                Jumlah siswa aktif per tingkat desil DTSEN
+                {desilDistribution.unknown > 0 ? ` · ${desilDistribution.unknown} siswa belum terdata` : ''}
+              </p>
+              <div className="chart-body">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={desilDistribution.bars}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eef0f6" />
+                    <XAxis dataKey="desil" tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <YAxis allowDecimals={false} tickFormatter={(v) => Math.round(v)} tick={{ fontSize: 11, fill: '#64748b' }} />
+                    <Tooltip
+                      formatter={(v) => [`${v} siswa`, 'Jumlah Siswa']}
+                      labelFormatter={(d) => `Desil ${d}`}
+                      contentStyle={TOOLTIP_STYLE}
+                    />
+                    <Bar dataKey="count" fill="#2563eb" name="Jumlah Siswa" radius={[6, 6, 0, 0]} maxBarSize={56} label={showLabels ? { position: 'top', fill: '#0f172a', fontSize: 12, fontWeight: 'bold' } : false} />
+                  </BarChart>
+                </ResponsiveContainer>
+                {desilDistribution.bars.every((x) => x.count === 0) && (
+                  <div className="chart-empty">Belum ada data desil. Wali kelas atau superadmin dapat mengisinya.</div>
+                )}
+              </div>
+            </div>
 
             <div className="chart-box chart-span" style={{ animationDelay: '0.25s' }}>
               <h4>Ringkasan IPT</h4>

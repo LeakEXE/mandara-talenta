@@ -88,9 +88,11 @@ function styleCell(cell, { fill, bold, align = "center", color } = {}) {
 const COLUMN_DEFS = [
   { key: "no", header1: "No", merge: "v", width: 5 },
   { key: "nama", header1: "Nama Siswa", merge: "v", width: 32, align: "left" },
+  { key: "jenis_kelamin", header1: "Jenis Kelamin", merge: "v", width: 14 },
   { key: "nis", header1: "Nis", merge: "v", width: 11 },
   { key: "kelas", header1: "Kelas", merge: "v", width: 10 },
   { key: "grha", header1: "Grha", merge: "v", width: 9 },
+  { key: "desil", header1: "Desil", merge: "v", width: 10 },
   { key: "pointAwal", header1: "Point Awal", merge: "v", width: 10 }, // Added point awal column
 
   { key: "prestasi_akademik", header1: "Prestasi", header2: "Akademik", group: "prestasi", width: 10 },
@@ -124,9 +126,11 @@ function buildRowValues(s) {
   return {
     no: s.no,
     nama: s.nama,
+    jenis_kelamin: s.jenis_kelamin === "L" ? "Laki-laki" : s.jenis_kelamin === "P" ? "Perempuan" : "-",
     nis: s.nis,
     kelas: s.kelas,
     grha: s.grha || "-",
+    desil: s.desil ?? "-",
     pointAwal: t.iptAwal, // ipt_awal siswa
     prestasi_akademik: Number(s.prestasi_akademik) ?? 0,
     prestasi_non_akademik: Number(s.prestasi_non_akademik) ?? 0,
@@ -163,9 +167,11 @@ export async function createClassIptExcelBuffer({ classStudents = [], schoolName
     return {
       no: index + 1,
       nama: student.nama || '-',
+      jenis_kelamin: student.jenis_kelamin || null,
       nis: student.nis || '-',
       kelas: student.kelas || '-',
       grha: student.grha || '-',
+      desil: student.desil ?? null,
       // Use snake_case to match backend API directly
       prestasi: Number(points.prestasi) || 0,
       prestasi_akademik: Number(points.prestasi_akademik) || 0,
@@ -678,7 +684,7 @@ function LaporanCetak({ user }) {
         ) : (
           <>
             <p style={{ marginBottom: '14px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Format cetak menampilkan Leger IPT Individual Point Talent dengan format tabel lengkap termasuk NIS, Nama, Kelas, Grha, breakdown IPT (Prestasi, Perkembangan Karakter, Keaktifan, Pelanggaran), dan Total IPT dalam format landscape yang rapi dan profesional.
+              Format cetak menampilkan Leger IPT Individual Point Talent dengan format tabel lengkap termasuk NIS, Nama, Jenis Kelamin, Kelas, Grha, Desil, breakdown IPT (Prestasi, Perkembangan Karakter, Keaktifan, Pelanggaran), dan Total IPT dalam format landscape yang rapi dan profesional.
             </p>
 
             <div className="ipt-print-toolbar">

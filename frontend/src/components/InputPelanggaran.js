@@ -77,7 +77,7 @@ function InputPelanggaran() {
     const checkPermission = async () => {
       try {
         const response = await api.get('/permissions/my-permissions');
-        const canAccess = user.role === 'superadmin' || ((user.role === 'guru' || user.role === 'pegawai') && response.data.can_input_pelanggaran);
+        const canAccess = user.role === 'superadmin' || Boolean(response.data.can_input_pelanggaran);
         setHasPermission(canAccess);
       } catch (error) {
         console.error('Error checking permission:', error);

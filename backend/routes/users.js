@@ -23,6 +23,38 @@ const { deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { generateUsername, validateUsernameFormat, isUsernameAvailable } = require('../utils/username');
 const { normalizeGender, normalizeDesil } = require('../utils/studentFields');
 
+// Resolve the class a staff member is wali kelas of: current academic year
+// first, otherwise the most recent assignment. Mirrors /wali-kelas/my-class so
+// the list a teacher sees and the students they may edit cannot drift.
+async function resolveWaliKelasAssignment(userId) {
+    const currentYear = getCurrentAcademicYear();
+    const [current] = await db.query(
+        `SELECT kelas, tahun_ajaran FROM wali_kelas_assignment
+         WHERE guru_id = ? AND tahun_ajaran = ?
+         ORDER BY id DESC LIMIT 1`,
+        [userId, currentYear]
+    );
+    if (current.length > 0) return current[0];
+
+    const [latest] = await db.query(
+        `SELECT kelas, tahun_ajaran FROM wali_kelas_assignment
+         WHERE guru_id = ?
+         ORDER BY tahun_ajaran DESC, id DESC LIMIT 1`,
+        [userId]
+    );
+    return latest[0] || null;
+}
+
+// A student belongs to the assignment's class when their derived class for
+// that academic year (tahun_pelajaran + jurusan) matches the assigned class.
+function studentBelongsToClass(student, assignment) {
+    if (!student || !assignment) return false;
+    const level = calculateCurrentClass(student.tahun_pelajaran, assignment.tahun_ajaran);
+    if (!level) return false;
+    const fullClass = student.jurusan ? `${level} ${student.jurusan}` : level;
+    return fullClass === assignment.kelas;
+}
+
 // Postgres LIKE is case-sensitive, so all user-facing name/NIS searches must
 // use ILIKE. Multi-word queries are tokenized: every token must appear in the
 // name (any order), OR the full phrase matches NIS/NIP/username.
@@ -699,7 +731,7 @@ router.get('/:id', auth, async (req, res) => {
         }
 
         const [users] = await db.query(
-            'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, jenis_kelamin, desil, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
+            'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, jenis_kelamin, desil, tahun_pelajaran, jurusan, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
             [requestedUserId]
         );
         
@@ -708,6 +740,19 @@ router.get('/:id', auth, async (req, res) => {
         }
         
         const user = users[0];
+
+        // Wali kelas of this student's class may edit desil (PUT /:id/desil);
+        // superadmin always may. The write endpoint re-checks this server-side,
+        // this flag only drives the UI.
+        user.can_edit_desil = false;
+        if (user.role === 'siswa') {
+            if (currentUserRole === 'superadmin') {
+                user.can_edit_desil = true;
+            } else if (currentUserRole === 'guru' || currentUserRole === 'pegawai') {
+                const assignment = await resolveWaliKelasAssignment(currentUserId);
+                user.can_edit_desil = studentBelongsToClass(user, assignment);
+            }
+        }
         
         // If user is a student, fetch wali kelas information
         if (user.role === 'siswa' && user.kelas) {
@@ -891,7 +936,9 @@ router.put('/:id', auth, async (req, res) => {
         // Wali Kelas is intentionally never editable here (derived data).
         if (currentUser.role !== 'superadmin') {
             const EDITABLE_FIELDS = {
-                siswa: new Set(['nama', 'nis', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat']),
+                // Students self-serve contact details + name only; NIS/jurusan/
+                // tahun_pelajaran are admin-managed (class derives from them).
+                siswa: new Set(['nama', 'no_hp', 'alamat']),
                 guru: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
                 pegawai: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
                 superadmin: new Set(['nama', 'nip', 'nis', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat', 'jabatan', 'detail'])
@@ -1240,19 +1287,23 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
                 return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
             }
 
-            // Welfare fields are superadmin-only (official DTSEN data):
-            // staff editing siswa targets must not send them at all.
-            let newGender = user[0].jenis_kelamin ?? null;
-            let newDesil = user[0].desil ?? null;
+            // Welfare fields are superadmin-only (official DTSEN data). The
+            // edit form resends them on every save (unchanged values too), so
+            // the gate may only fire when a value really changes — otherwise
+            // every guru/pegawai biodata save would 403 on unchanged fields.
+            const currentGender = user[0].jenis_kelamin ?? null;
+            const currentDesil = user[0].desil ?? null;
+            let newGender = currentGender;
+            let newDesil = currentDesil;
             if (jenis_kelamin !== undefined || desil !== undefined) {
-                if (req.user.role !== 'superadmin') {
-                    return res.status(403).json({ message: 'Hanya superadmin yang dapat mengubah jenis kelamin/desil' });
-                }
                 try {
                     if (jenis_kelamin !== undefined) newGender = normalizeGender(jenis_kelamin).value;
                     if (desil !== undefined) newDesil = normalizeDesil(desil).value;
                 } catch (err) {
                     return res.status(err.statusCode || 400).json({ message: err.message });
+                }
+                if (req.user.role !== 'superadmin' && (newGender !== currentGender || newDesil !== currentDesil)) {
+                    return res.status(403).json({ message: 'Hanya superadmin yang dapat mengubah jenis kelamin/desil' });
                 }
             }
 
@@ -1323,6 +1374,70 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Set a student's desil (DTSEN welfare level). Narrow by design: welfare
+// fields stay superadmin-only everywhere else, but the wali kelas of the
+// student's own class may maintain desil for their students.
+router.put('/:id/desil', auth, teacherOrSuperAdmin, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(userId)) {
+            return res.status(400).json({ message: 'ID tidak valid' });
+        }
+
+        const [target] = await db.query(
+            'SELECT id, nama, nis, role, tahun_pelajaran, jurusan, desil FROM users WHERE id = ?',
+            [userId]
+        );
+        if (target.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const student = target[0];
+        if (student.role !== 'siswa') {
+            return res.status(400).json({ message: 'Desil hanya dapat diubah untuk siswa' });
+        }
+
+        let newDesil;
+        if (req.body?.desil === undefined) {
+            return res.status(400).json({ message: 'Desil wajib diisi (1-10, atau kosong untuk menghapus)' });
+        }
+        try {
+            // '' / null clears the field; only integers 1-10 are accepted.
+            newDesil = normalizeDesil(req.body.desil).value;
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
+
+        if (req.user.role !== 'superadmin') {
+            const assignment = await resolveWaliKelasAssignment(req.user.id);
+            if (!assignment) {
+                return res.status(403).json({ message: 'Anda belum ditunjuk sebagai wali kelas' });
+            }
+            if (!studentBelongsToClass(student, assignment)) {
+                return res.status(403).json({ message: 'Siswa ini bukan anggota kelas Anda' });
+            }
+        }
+
+        const oldDesil = student.desil ?? null;
+        if (oldDesil === newDesil) {
+            return res.json({ desil: newDesil });
+        }
+
+        await db.query('UPDATE users SET desil = ? WHERE id = ?', [newDesil, userId]);
+        await logActivity(
+            req.user.id,
+            'UPDATE_DESIL',
+            `${req.user.nama} (${req.user.role}) mengubah desil ${student.nama} (${student.nis || '-'}) dari ${oldDesil ?? 'Tidak terdata'} menjadi ${newDesil ?? 'Tidak terdata'}`,
+            req.ip
+        );
+
+        res.json({ desil: newDesil });
+    } catch (error) {
+        console.error('Error updating desil:', error);
+        res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
     }
 });
 

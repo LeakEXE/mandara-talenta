@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import StudentDetail from './StudentDetail';
 import { GRHA_OPTIONS, getRowField, normalizeGrha } from '../utils/excelImport';
 import { styleImportTemplateSheet } from '../utils/excelTemplate';
+import { DESIL_OPTIONS } from '../utils/desil';
 import { Plus, Download, CircleCheck, CircleX, BookOpen, Lightbulb } from 'lucide-react';
 
 const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
@@ -13,20 +14,6 @@ const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
 const GENDER_OPTIONS = [
   { value: 'L', label: 'L - Laki-laki' },
   { value: 'P', label: 'P - Perempuan' },
-];
-
-// Desil DTSEN (BPS/Kemensos): 1 = kesejahteraan terendah, 10 = tertinggi.
-const DESIL_OPTIONS = [
-  { value: 1, label: '1 - Sangat miskin' },
-  { value: 2, label: '2 - Miskin' },
-  { value: 3, label: '3 - Hampir miskin' },
-  { value: 4, label: '4 - Rentan miskin' },
-  { value: 5, label: '5 - Menengah bawah' },
-  { value: 6, label: '6 - Menengah' },
-  { value: 7, label: '7 - Menengah' },
-  { value: 8, label: '8 - Menengah atas' },
-  { value: 9, label: '9 - Kaya' },
-  { value: 10, label: '10 - Sangat kaya' },
 ];
 
 const EXPORT_COLUMNS = [
@@ -438,8 +425,14 @@ function KelolaAkun() {
         await api.put(`/users/${editStudent.id}/username`, { username: newUsername });
       }
       // Biodata edits apply directly, no approval needed (guru/pegawai may
-      // only touch siswa targets enforced server-side too).
-      await api.put(`/users/${editStudent.id}/biodata`, formData);
+      // only touch siswa targets enforced server-side too). Welfare fields
+      // are superadmin-only, so don't send them at all from staff sessions.
+      const payload = { ...formData };
+      if (userRole !== 'superadmin') {
+        delete payload.jenis_kelamin;
+        delete payload.desil;
+      }
+      await api.put(`/users/${editStudent.id}/biodata`, payload);
       setMessage(`Data ${editStudent.role === 'siswa' ? 'siswa' : 'guru'} berhasil diupdate!`);
       
       setShowEditBiodataModal(false);
@@ -1542,9 +1535,8 @@ function KelolaAkun() {
                 <div className="form-group">
                   <label>Desil Kesejahteraan</label>
                   <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
-                    <option value="">Tidak terdata</option>
                     {DESIL_OPTIONS.map(d => (
-                      <option key={d.value} value={d.value}>{d.label}</option>
+                      <option key={d.value || 'none'} value={d.value}>{d.label}</option>
                     ))}
                   </select>
                   <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
@@ -1912,22 +1904,36 @@ function KelolaAkun() {
                   </div>
                   <div className="form-group">
                     <label>Jenis Kelamin</label>
-                    <select value={formData.jenis_kelamin || ''} onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}>
+                    <select
+                      value={formData.jenis_kelamin || ''}
+                      onChange={(e) => setFormData({...formData, jenis_kelamin: e.target.value})}
+                      disabled={userRole !== 'superadmin'}
+                    >
                       <option value="" disabled hidden>Pilih Jenis Kelamin</option>
                       {GENDER_OPTIONS.map(g => (
                         <option key={g.value} value={g.value}>{g.label}</option>
                       ))}
                     </select>
+                    {userRole !== 'superadmin' && (
+                      <small style={{ color: '#666', fontSize: '12px' }}>Hanya superadmin yang dapat mengubah jenis kelamin.</small>
+                    )}
                   </div>
                   <div className="form-group">
                     <label>Desil Kesejahteraan</label>
-                    <select value={formData.desil ?? ''} onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}>
-                      <option value="">Tidak terdata</option>
+                    <select
+                      value={formData.desil ?? ''}
+                      onChange={(e) => setFormData({...formData, desil: e.target.value === '' ? '' : Number(e.target.value)})}
+                      disabled={userRole !== 'superadmin'}
+                    >
                       {DESIL_OPTIONS.map(d => (
-                        <option key={d.value} value={d.value}>{d.label}</option>
+                        <option key={d.value || 'none'} value={d.value}>{d.label}</option>
                       ))}
                     </select>
-                    <small style={{ color: '#666', fontSize: '12px' }}>Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data.</small>
+                    <small style={{ color: '#666', fontSize: '12px' }}>
+                      {userRole !== 'superadmin'
+                        ? 'Hanya superadmin yang dapat mengubah desil.'
+                        : "Desil DTSEN: 1 = sangat miskin, 10 = sangat kaya. Pilih 'Tidak terdata' bila belum ada data."}
+                    </small>
                   </div>
                   <div className="form-group">
                     <label>Tahun Pelajaran (Masuk)</label>
