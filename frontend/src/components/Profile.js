@@ -8,7 +8,6 @@ import StudentRecordsHistory from './StudentRecordsHistory';
 import { UserRound, Camera, Trash2 } from 'lucide-react';
 
 const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
-const JURUSAN_OPTIONS = ['TKJ 1', 'TKJ 2', 'DPIB 1', 'DPIB 2', 'TKR 1', 'TKR 2'];
 
 const CROP_MIN_ZOOM = 1;
 const CROP_MAX_ZOOM = 3;
@@ -542,10 +541,9 @@ function Profile() {
       // Send only the fields this role may change (server enforces the same list)
       const payload = { no_hp: editData.no_hp, alamat: editData.alamat };
       if (user.role === 'siswa') {
+        // Students may only edit their name and contact details; NIS, jurusan
+        // and tahun_pelajaran are admin-managed (locked server-side too).
         payload.nama = editData.nama;
-        payload.nis = editData.nis;
-        payload.jurusan = editData.jurusan;
-        payload.tahun_pelajaran = editData.tahun_pelajaran;
       }
       if (user.role === 'guru' || user.role === 'pegawai') {
         payload.nip = editData.nip;
@@ -721,28 +719,16 @@ function Profile() {
               </div>
               <div className="form-group">
                 <label>NIS</label>
-                <input type="text" value={editData.nis || ''} onChange={(e) => setEditData({...editData, nis: e.target.value})} required />
+                <input type="text" value={editData.nis || ''} disabled />
               </div>
               <div className="form-group">
                 <label>Jurusan</label>
-                <select value={editData.jurusan || ''} onChange={(e) => setEditData({...editData, jurusan: e.target.value})} required>
-                  <option value="" disabled hidden>Pilih Jurusan</option>
-                  {JURUSAN_OPTIONS.map((j) => (
-                    <option key={j} value={j}>{j}</option>
-                  ))}
-                </select>
+                <input type="text" value={editData.jurusan || '-'} disabled />
               </div>
               <div className="form-group">
                 <label>Tahun Pelajaran Masuk</label>
-                <select value={editData.tahun_pelajaran || ''} onChange={(e) => setEditData({...editData, tahun_pelajaran: e.target.value})} required>
-                  <option value="" disabled hidden>Pilih Tahun Pelajaran</option>
-                  {Array.from({ length: 11 }, (_, i) => {
-                    const start = 2024 + i;
-                    return `${start}-${start + 1}`;
-                  }).map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                <input type="text" value={editData.tahun_pelajaran || '-'} disabled />
+                <div className="form-helper-text">NIS, jurusan, dan tahun pelajaran hanya dapat diubah oleh admin.</div>
               </div>
               <div className="form-group">
                 <label>No HP</label>

@@ -891,7 +891,9 @@ router.put('/:id', auth, async (req, res) => {
         // Wali Kelas is intentionally never editable here (derived data).
         if (currentUser.role !== 'superadmin') {
             const EDITABLE_FIELDS = {
-                siswa: new Set(['nama', 'nis', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat']),
+                // Students self-serve contact details + name only; NIS/jurusan/
+                // tahun_pelajaran are admin-managed (class derives from them).
+                siswa: new Set(['nama', 'no_hp', 'alamat']),
                 guru: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
                 pegawai: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
                 superadmin: new Set(['nama', 'nip', 'nis', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat', 'jabatan', 'detail'])
