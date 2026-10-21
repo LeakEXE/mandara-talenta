@@ -3,6 +3,7 @@ import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import { formatDisplayText } from '../utils/formatDisplayText';
+import { formatDesil } from '../utils/desil';
 import StudentRecordsHistory from './StudentRecordsHistory';
 import { UserRound, Camera, Trash2 } from 'lucide-react';
 
@@ -817,6 +818,7 @@ function Profile() {
             <p><strong>Jurusan:</strong> {profile?.jurusan || '-'}</p>
             <p><strong>Tahun Pelajaran Masuk:</strong> {profile?.tahun_pelajaran || '-'}</p>
             <p><strong>Grha:</strong> {profile?.grha || '-'}</p>
+            <p><strong>Desil:</strong> {formatDesil(profile?.desil, '-')}</p>
             <p><strong>Wali Kelas:</strong> {profile?.wali_kelas_nama || profile?.wali_kelas || '-'}</p>
           </>
         )}

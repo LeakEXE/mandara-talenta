@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
+import { formatDesil } from '../utils/desil';
 import {
   BarChart,
   Bar,
@@ -327,7 +328,8 @@ function Dashboard() {
               ['NIS', user?.nis || '-'],
               ['Kelas', user?.kelas || '-'],
               ['Grha', user?.grha || '-'],
-              ['Jurusan', user?.jurusan || '-']
+              ['Jurusan', user?.jurusan || '-'],
+              ['Desil', formatDesil(user?.desil)]
             ].map(([label, value]) => (
               <div className="detail-item" key={label}>
                 <span className="detail-label">{label}</span>
