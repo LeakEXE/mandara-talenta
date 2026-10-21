@@ -136,10 +136,24 @@ app.use('/uploads', (req, res, next) => {
   next();
 }, express.static(UPLOAD_DIR));
 
+// Cache policy for the built frontend:
+// - CRA content-hashes filenames under /static/, so those can be cached forever.
+// - Everything else (index.html, manifest.json, icons, logos) keeps stable URLs,
+//   so it must revalidate after every deploy. Without this, browsers can keep
+//   showing an old favicon/PWA icon even though the file on disk changed.
+const setFrontendCacheHeaders = (res, filePath) => {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.includes('/static/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else {
+    res.setHeader('Cache-Control', 'no-cache');
+  }
+};
+
 // Serve React frontend static files (consolidated deployment)
 const frontendBuildPath = path.join(__dirname, '../frontend/build');
 if (fs.existsSync(frontendBuildPath)) {
-  app.use(express.static(frontendBuildPath));
+  app.use(express.static(frontendBuildPath, { setHeaders: setFrontendCacheHeaders }));
   console.log('Serving React frontend from:', frontendBuildPath);
 } else {
   console.warn('Frontend build directory not found at:', frontendBuildPath);
@@ -189,6 +203,8 @@ app.get('*', (req, res) => {
   const indexPath = path.join(frontendBuildPath, 'index.html');
   
   if (fs.existsSync(indexPath)) {
+    // SPA entry point: always revalidate so a new deploy is picked up.
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(indexPath);
   } else {
     res.status(404).json({ message: 'Frontend build not found. Please run "npm run build" in the frontend directory.' });
