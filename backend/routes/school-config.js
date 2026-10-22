@@ -1,22 +1,40 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
 const db = require('../config/database');
-const { auth } = require('../middleware/auth');
+const { auth, superAdminOnly } = require('../middleware/auth');
 const multer = require('multer');
-const { ensureUploadSubdir } = require('../utils/paths');
+const { ensureUploadSubdir, UPLOAD_DIR } = require('../utils/paths');
 
-// Configure multer for logo uploads
+// Configure multer for logo uploads. Generate a safe filename instead of
+// trusting the multipart filename, which can contain path traversal segments.
 const logoStorage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, ensureUploadSubdir('logos'));
     },
     filename: (req, file, cb) => {
         const timestamp = Date.now();
-        cb(null, `${timestamp}_${file.originalname}`);
+        const random = Math.random().toString(36).slice(2, 10);
+        // Derive the extension from the validated MIME type, never from the
+        // client-supplied filename (which could be .html/.svg).
+        const ext = file.mimetype === 'image/png' ? '.png' : '.jpg';
+        cb(null, `${timestamp}_${random}${ext}`);
     }
 });
 
-const logoUpload = multer({ storage: logoStorage });
+const logoUpload = multer({
+    storage: logoStorage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+            const error = new Error('Only JPEG and PNG images are allowed');
+            error.status = 400;
+            return cb(error);
+        }
+        cb(null, true);
+    }
+});
 
 // GET public school branding
 router.get('/public', async (req, res) => {
@@ -34,17 +52,63 @@ router.get('/public', async (req, res) => {
       });
     }
 
-    // Transform logo_url to ensure it's a proper relative path
+    // Public pages (login/forgot-password) need the school logo, but /uploads
+    // itself requires a session. Point them at the controlled public logo
+    // endpoint below instead of exposing all uploaded files.
     const config = rows[0];
-    if (config.logo_url && !config.logo_url.startsWith('http')) {
-      // Ensure relative path starts with /
-      config.logo_url = config.logo_url.startsWith('/') ? config.logo_url : `/${config.logo_url}`;
+    if (config.logo_url) {
+      const normalizedLogo = String(config.logo_url).replace(/\\/g, '/');
+      if (/^(https?:\/\/|data:|\/\/)/i.test(normalizedLogo)) {
+        config.logo_url = normalizedLogo;
+      } else if (/^\/?uploads\/logos\//.test(normalizedLogo)) {
+        config.logo_url = '/api/school-config/public/logo';
+      } else {
+        config.logo_url = normalizedLogo.startsWith('/') ? normalizedLogo : `/${normalizedLogo}`;
+      }
     }
 
     res.json(config);
   } catch (error) {
     console.error('Error fetching public school config:', error);
     res.status(500).json({ message: 'Failed to fetch school configuration' });
+  }
+});
+
+// GET the configured school logo for unauthenticated branding pages.
+// Only the exact file stored in school_config.logo_url is served; arbitrary
+// filenames under uploads/ are not reachable through this route.
+router.get('/public/logo', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT logo_url FROM school_config LIMIT 1');
+    const logoUrl = rows[0]?.logo_url;
+
+    if (!logoUrl || /^https?:\/\//i.test(String(logoUrl))) {
+      return res.status(404).end();
+    }
+
+    const normalized = String(logoUrl).replace(/\\/g, '/');
+    if (!normalized.startsWith('uploads/logos/') && !normalized.startsWith('/uploads/logos/')) {
+      return res.status(404).end();
+    }
+
+    const filename = path.basename(normalized);
+    if (!/\.(png|jpe?g|gif|webp|svg)$/i.test(filename)) {
+      return res.status(404).end();
+    }
+
+    const logoPath = path.resolve(UPLOAD_DIR, 'logos', filename);
+    if (!fs.existsSync(logoPath)) {
+      return res.status(404).end();
+    }
+
+    // Restrict the response so an SVG logo opened directly cannot execute
+    // scripts in the application's origin. Raster images are unaffected.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'; sandbox");
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.sendFile(logoPath);
+  } catch (error) {
+    console.error('Error serving public school logo:', error);
+    res.status(500).end();
   }
 });
 
@@ -125,21 +189,12 @@ router.put('/', async (req, res) => {
   }
 });
 
-// Upload logo endpoint
-router.post('/upload-logo', logoUpload.single('logo'), async (req, res) => {
+// Upload logo endpoint. The role gate runs before multer so non-superadmins
+// cannot write files to disk even if they never reach the handler.
+router.post('/upload-logo', superAdminOnly, logoUpload.single('logo'), async (req, res) => {
   try {
-    if (req.user.role !== 'superadmin') {
-      return res.status(403).json({ message: 'Only superadmin can upload logo' });
-    }
-    
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
-    }
-    
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
-    
-    if (!allowedTypes.includes(req.file.mimetype)) {
-      return res.status(400).json({ message: 'Only JPEG and PNG images are allowed' });
     }
 
     const logoUrl = `/uploads/logos/${req.file.filename}`;

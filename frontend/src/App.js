@@ -83,6 +83,13 @@ function ProtectedRoute({ children, allowedRoles }) {
         localStorage.setItem('user', JSON.stringify(freshUser));
         setUser(freshUser);
 
+        // A role change/demotion takes effect immediately in the UI too, not
+        // just in backend authorization.
+        if (allowedRoles && !allowedRoles.includes(freshUser.role)) {
+          navigate('/dashboard');
+          return;
+        }
+
         // Fresh flag wins over stale storage (e.g. sessions from before the rollout)
         if (freshUser.must_change_credentials && location.pathname !== '/setup-akun') {
           navigate('/setup-akun');

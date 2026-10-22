@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "license": "UNLICENSED",
   "private": true,
-  "proxy": "http://localhost:5000",
+  "proxy": "http://127.0.0.1:5000",
   "dependencies": {
     "aos": "^2.3.4",
     "axios": "^1.6.2",
@@ -27,7 +27,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "serve": "serve -s build -l 3000"
+    "serve": "node serve.js"
   },
   "eslintConfig": {
     "extends": [

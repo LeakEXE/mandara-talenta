@@ -20,18 +20,18 @@ const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
-const { enforceCredentialsChanged } = require('./middleware/auth');
+
+// Load environment before local modules that read process.env at require time
+// (security headers, upload paths, database pool).
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+const { enforceCredentialsChanged, authForUploads } = require('./middleware/auth');
 const { UPLOAD_DIR } = require('./utils/paths');
 const {
   securityHeaders,
-  sqlInjectionPrevention, 
-  xssPrevention, 
-  sanitizeInput, 
   errorHandler,
   securityLogger
 } = require('./middleware/security');
-
-dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 
@@ -42,76 +42,77 @@ const { httpMetricsMiddleware, metricsAuth, metricsHandler } = require('./utils/
 app.get('/metrics', metricsAuth, metricsHandler);
 app.use(httpMetricsMiddleware);
 
-// Trust proxy: express-rate-limit needs this whenever an upstream proxy sets
-// X-Forwarded-For (CRA dev proxy, nginx, ...), otherwise it throws
-// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and can't identify users accurately.
-// - Development: ON (1 hop = CRA dev proxy).
-// - Production: OFF by default so clients can't spoof IPs to dodge rate
-//   limits; set TRUST_PROXY=1 (or hop count) only if actually behind a proxy.
-if (process.env.TRUST_PROXY !== undefined) {
-  app.set('trust proxy', /^\d+$/.test(process.env.TRUST_PROXY) ? parseInt(process.env.TRUST_PROXY, 10) : true);
-} else if (process.env.NODE_ENV !== 'production') {
+// Trust proxy: Cloudflare Tunnel is the only ingress. cloudflared runs on a
+// separate LAN host and sets X-Forwarded-For / CF-Connecting-IP, so one trusted
+// hop is required for express-rate-limit to see the real client IP.
+// IMPORTANT: this is safe only while ports 3000/5000 are firewalled to the
+// cloudflared host. A directly-connected LAN client could otherwise spoof the
+// forwarded headers. `TRUST_PROXY=false` is supported for unusual local-only
+// setups; any other non-numeric value is rejected rather than silently
+// trusting every proxy.
+if (process.env.TRUST_PROXY === undefined || process.env.TRUST_PROXY === '') {
+  app.set('trust proxy', 1);
+} else if (/^\d+$/.test(process.env.TRUST_PROXY)) {
+  app.set('trust proxy', parseInt(process.env.TRUST_PROXY, 10));
+} else if (process.env.TRUST_PROXY === 'false') {
+  app.set('trust proxy', false);
+} else {
+  console.warn('[security] Invalid TRUST_PROXY value; using 1 trusted hop');
   app.set('trust proxy', 1);
 }
 
 // Security Middleware - Security headers (Helmet)
 app.use(securityHeaders);
 
-// NOTE: no global rate/speed limiting. The whole school sits behind one NAT
-// IP, so per-IP budgets (previously 100 req/min) throttled legitimate users.
-// Brute-force protection lives on the login route itself (see routes/auth.js).
+// API responses contain user-specific data and must not be stored by browser
+// or intermediary caches. The public logo route overrides this with its own
+// short-lived public cache policy.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
-// Security Middleware - Request logging for security audit
-app.use(securityLogger);
+// CORS - allow only explicit origins in production. In development all
+// origins are allowed for convenience. Origin matching is exact
+// (scheme + host + port), not hostname-only.
+const CORS_PUBLIC_ORIGIN = 'https://talenta.skanbara.my.id';
+const normalizeOrigin = (value) => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
 
-// Security Middleware - SQL Injection prevention
-app.use(sqlInjectionPrevention);
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((value) => normalizeOrigin(value.trim()))
+  .filter(Boolean);
 
-// Security Middleware - XSS prevention
-app.use(xssPrevention);
+const productionOrigins = [...new Set([
+  CORS_PUBLIC_ORIGIN,
+  ...configuredOrigins.filter((origin) => origin.startsWith('https://'))
+])];
 
-// Security Middleware - Input sanitization
-app.use(sanitizeInput);
-
-// CORS - Allow requests from same origin or configured origins
 const corsOptions = {
   origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
+    // Allow requests with no origin (server-to-server, curl, mobile apps).
     if (!origin) return callback(null, true);
 
-    // In development, allow all
+    // Development: keep the existing permissive behavior.
     if (process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
 
-    // In production, check allowed origins
-    const allowedOrigins = (process.env.ALLOWED_ORIGINS?.split(',') || [
-      'http://localhost:3000',
-      'http://202.162.215.133:3000',
-      'http://202.162.215.133'
-    ]).map((s) => s.trim()).filter(Boolean);
-
-    // Allow if origin is in allowed list or same host, different port.
-    // URL parsing is guarded: a malformed entry must deny, never 500.
-    const isAllowed = allowedOrigins.some((allowed) => {
-      // Exact match
-      if (allowed === origin) return true;
-      try {
-        const allowedUrl = new URL(allowed);
-        const originUrl = new URL(origin);
-        return allowedUrl.hostname === originUrl.hostname;
-      } catch {
-        console.error(`[CORS] skipping malformed allowed origin: "${allowed}"`);
-        return false;
-      }
-    });
-
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.error(`[CORS] rejected origin "${origin}" (allowed: ${allowedOrigins.join(', ') || '(none)'})`);
-      callback(new Error('Not allowed by CORS'));
+    const normalized = normalizeOrigin(origin);
+    if (normalized && productionOrigins.includes(normalized)) {
+      return callback(null, true);
     }
+
+    console.error(`[CORS] rejected origin "${origin}" (allowed: ${productionOrigins.join(', ') || '(none)'})`);
+    const error = new Error('Not allowed by CORS');
+    error.status = 403;
+    callback(error);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -119,20 +120,26 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
+// Body parsing must run before validation/logging middleware that inspects
+// req.body. Do NOT reintroduce HTML-escaping input filters here: output
+// encoding belongs at render time, and escaping passwords breaks login.
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Cookie parser middleware - required for HTTP-only cookie authentication
 app.use(cookieParser());
 
+// Request logging for security audit (after body parsing, with redaction)
+app.use(securityLogger);
+
 // First-login enforcement: users flagged must_change_credentials can only
 // reach login/logout plus the credential-setup endpoints (see middleware/auth.js)
 app.use(enforceCredentialsChanged);
 
-// Static folder for uploads - with CORS headers for images
-app.use('/uploads', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+// Uploads contain student evidence: require a valid session and keep them
+// same-origin. Express/Helmet supplies the security headers; no wildcard CORS.
+app.use('/uploads', authForUploads, (req, res, next) => {
+  res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
   next();
 }, express.static(UPLOAD_DIR));
 
@@ -215,10 +222,13 @@ app.get('*', (req, res) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-const HOST = '0.0.0.0'; // Listen on all interfaces for cross-device access
+// cloudflared runs on another LAN host, so it must reach this app over the
+// LAN. Set HOST to this server's LAN IP (preferred) or 0.0.0.0, and firewall
+// port 5000 so only the cloudflared host can connect. The 127.0.0.1 default
+// remains for local-only development.
+const HOST = process.env.HOST || '127.0.0.1';
 
 app.listen(PORT, HOST, () => {
     console.log(`Server running on http://${HOST}:${PORT}`);
-    console.log(`Access from other devices using your computer's IP address`);
-    console.log(`Security middleware active: Helmet, Rate Limiting, SQL Injection Prevention, XSS Prevention`);
+    console.log(`Security middleware active: Helmet, rate limiting, request redaction`);
 });
