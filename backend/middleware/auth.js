@@ -1,35 +1,67 @@
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 
+const getRequestToken = (req) => {
+    let token = req.cookies?.token;
+    if (!token) {
+        token = req.header('Authorization')?.replace('Bearer ', '');
+    }
+    return token;
+};
+
 const auth = async (req, res, next) => {
+    const token = getRequestToken(req);
+    if (!token) {
+        return res.status(401).json({ message: 'No token, authorization denied' });
+    }
+
+    let decoded;
     try {
-        // First try to get token from HTTP-only cookie
-        let token = req.cookies.token;
-        
-        // Fallback to Authorization header for backward compatibility during transition
-        if (!token) {
-            token = req.header('Authorization')?.replace('Bearer ', '');
-        }
-        
-        if (!token) {
-            return res.status(401).json({ message: 'No token, authorization denied' });
-        }
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+        return res.status(401).json({ message: 'Token is not valid' });
+    }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        // Tokens issued before 'nama' was added to the JWT payload don't have it;
-        // fetch it once from the DB so req.user.nama is never undefined.
-        // (New tokens include nama, so this query only runs for old tokens.)
-        if (decoded.nama === undefined) {
-            const [rows] = await db.query('SELECT nama FROM users WHERE id = ?', [decoded.id]);
-            if (rows.length > 0) {
-                decoded.nama = rows[0].nama;
+    try {
+        // enforceCredentialsChanged() runs before API routes and refreshes
+        // role/nama from the database. For routes it skips (profile/setup),
+        // fetch the current values here so demotions still take effect.
+        if (req.authFresh && req.user?.id === decoded.id) {
+            decoded.role = req.user.role;
+            decoded.nama = req.user.nama;
+        } else {
+            const [rows] = await db.query(
+                'SELECT role, nama FROM users WHERE id = ?',
+                [decoded.id]
+            );
+            if (rows.length === 0) {
+                return res.status(401).json({ message: 'Token is not valid' });
             }
+            decoded.role = rows[0].role;
+            decoded.nama = rows[0].nama;
         }
 
         req.user = decoded;
         next();
     } catch (error) {
+        console.error('Auth error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Lightweight auth for /uploads: images/PDFs only need a valid session, not a
+// fresh role lookup on every file request. API routes use auth() + the global
+// enforceCredentialsChanged() role refresh instead.
+const authForUploads = (req, res, next) => {
+    const token = getRequestToken(req);
+    if (!token) {
+        return res.status(401).json({ message: 'No token, authorization denied' });
+    }
+
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET);
+        next();
+    } catch {
         res.status(401).json({ message: 'Token is not valid' });
     }
 };
@@ -48,6 +80,7 @@ const CREDENTIAL_SETUP_PATHS = new Set([
 // before the user authenticates e.g. school branding for the logo).
 const PUBLIC_PATHS = new Set([
     '/api/school-config/public',
+    '/api/school-config/public/logo',
     '/api/auth/forgot-password'
 ]);
 
@@ -66,7 +99,7 @@ const enforceCredentialsChanged = async (req, res, next) => {
         if (req.method === 'GET' && req.path === '/api/profile') {
             return next();
         }
-        const token = req.cookies?.token || req.header('Authorization')?.replace('Bearer ', '');
+        const token = getRequestToken(req);
         if (!token) {
             return res.status(401).json({ message: 'No token, authorization denied' });
         }
@@ -76,12 +109,24 @@ const enforceCredentialsChanged = async (req, res, next) => {
         } catch {
             return res.status(401).json({ message: 'Token is not valid' });
         }
-        req.user = decoded;
         const [rows] = await db.query(
-            'SELECT must_change_credentials FROM users WHERE id = ?',
+            'SELECT role, nama, must_change_credentials FROM users WHERE id = ?',
             [decoded.id]
         );
-        if (rows.length > 0 && (rows[0].must_change_credentials === true || rows[0].must_change_credentials === 1)) {
+        if (rows.length === 0) {
+            return res.status(401).json({ message: 'Token is not valid' });
+        }
+
+        // Refresh role/nama from the database so role changes take effect
+        // immediately instead of waiting for the 24h JWT to expire.
+        req.user = {
+            ...decoded,
+            role: rows[0].role,
+            nama: rows[0].nama
+        };
+        req.authFresh = true;
+
+        if (rows[0].must_change_credentials === true || rows[0].must_change_credentials === 1) {
             return res.status(403).json({
                 message: 'Anda harus mengganti username dan password terlebih dahulu',
                 mustChangeCredentials: true
@@ -89,6 +134,7 @@ const enforceCredentialsChanged = async (req, res, next) => {
         }
         next();
     } catch (error) {
+        console.error('Credential enforcement error:', error);
         if (!res.headersSent) {
             res.status(500).json({ message: 'Server error' });
         }
@@ -305,4 +351,4 @@ const checkInputAccess = (jenisInput) => {
   };
 };
 
-module.exports = { auth, superAdminOnly, approverOnly, approverFor, getApprovalScopes, APPROVAL_TYPES, enforceCredentialsChanged, teacherOrSuperAdmin, teacherOnly, checkInputAccess, checkPermission };
+module.exports = { auth, authForUploads, superAdminOnly, approverOnly, approverFor, getApprovalScopes, APPROVAL_TYPES, enforceCredentialsChanged, teacherOrSuperAdmin, teacherOnly, checkInputAccess, checkPermission };

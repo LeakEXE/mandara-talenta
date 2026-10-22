@@ -1,4 +1,4 @@
-# 🔒 Mandara Talenta - Dokumentasi Keamanan
+# Mandara Talenta - Dokumentasi Keamanan
 
 > File ini mendeskripsikan langkah keamanan yang **benar-benar diimplementasikan**
 > di kode (`backend/middleware/security.js`, `backend/middleware/auth.js`,
@@ -8,24 +8,32 @@
 
 | Langkah | Lokasi | Keterangan |
 |---|---|---|
-| Login rate limiting | `middleware/security.js` (`loginLimiter`) | Maks 5x percobaan / 15 menit per IP; login sukses tidak dihitung |
-| Logout rate limiting | `middleware/security.js` (`logoutLimiter`) | Maks 10x / 15 menit per IP |
-| API rate limiting | `middleware/security.js` (`apiLimiter`) | Maks 500 request / menit per IP |
-| Security headers | `middleware/security.js` (`securityHeaders`, helmet) | Header HTTP keamanan standar |
-| SQL injection prevention | `middleware/security.js` (`sqlInjectionPrevention`) | Pola SQL berbahaya di request ditolak (403); query DB memakai prepared statements |
-| Password hashing | `routes/auth.js` (bcrypt) | Password tidak pernah disimpan plain-text |
-| JWT via HTTP-only cookie | `routes/auth.js`, `middleware/auth.js` | Token tidak bisa dibaca JavaScript (mitigasi XSS); kredensial `withCredentials` |
-| Role-based access control | `middleware/auth.js` (`auth`, `superadminOnly`, dsb.) | Setiap route sensitif dicek peran |
+| Login rate limiting per IP | `middleware/security.js` (`loginLimiter`) | Maks 100 percobaan gagal / 15 menit per IP; login sukses tidak dihitung |
+| Login rate limiting per akun | `middleware/security.js` (`loginAccountLimiter`) | Maks 20 percobaan gagal / 15 menit per username |
+| Forgot-password rate limiting | `middleware/security.js` (`forgotPasswordLimiter`) | Maks 10 permintaan / 15 menit per IP; ditambah cooldown 12 jam per akun |
+| Security headers (API) | `middleware/security.js` (`securityHeaders`, helmet) | CSP, HSTS, nosniff, referrer policy, frame protection |
+| Security headers (frontend) | `frontend/serve.js` | Header yang sama untuk HTML/static saat frontend di-serve terpisah |
+| Password hashing | `routes/auth.js` (bcrypt, async) | Password tidak pernah disimpan plain-text; bcrypt tidak memblokir event loop |
+| Anti username enumeration | `routes/auth.js` | Pesan login dibuat generik; akun tidak dikenal tetap menjalankan bcrypt dummy |
+| JWT via HTTP-only cookie | `routes/auth.js`, `middleware/auth.js` | Token tidak bisa dibaca JavaScript; `SameSite=Lax`, `Secure` saat HTTPS |
+| Role-based access control | `middleware/auth.js` (`auth`, `superAdminOnly`, dsb.) | Peran di-refresh dari database sehingga perubahan role berlaku segera |
 | Input permission check | `middleware/auth.js` (`checkInputAccess`) | Guru/Siswa hanya bisa input sesuai izin superadmin |
-| CORS allowlist | `server.js` (`ALLOWED_ORIGINS`) | Origin di luar daftar ditolak |
-| Upload validation | `routes/*` (multer) + `utils/fileUtils.js` | Tipe/ukuran file dibatasi, disimpan lokal di `backend/uploads/` |
+| SQL injection prevention | Query database | Nilai input memakai parameter `?`; identifier/limit dinamis berasal dari allowlist/internal, bukan input mentah |
+| XSS prevention | React + CSP | React melakukan output escaping; CSP `script-src 'self'`; tidak ada `dangerouslySetInnerHTML` |
+| CORS allowlist | `server.js` (`ALLOWED_ORIGINS`) | Origin dicocokkan persis (scheme + host + port); wildcard tidak dipakai |
+| Upload access | `server.js` (`authForUploads`) | `/uploads` memerlukan sesi login; tidak ada `Access-Control-Allow-Origin: *` |
+| Public branding logo | `routes/school-config.js` | Hanya file logo yang tercatat di `school_config` yang bisa diakses tanpa login |
+| Upload validation | `routes/*` (multer) + `utils/evidenceUpload.js` | Bukti: gambar/PDF dengan batas ukuran; logo: JPEG/PNG maks 5 MB, nama file dibuat server |
 
 ## Yang Harus Dilakukan Operator (tidak otomatis)
 
-- [ ] `JWT_SECRET` di `.env` diganti string acak ≥ 32 karakter (jangan pakai contoh)
+- [ ] `JWT_SECRET` di `.env` diganti string acak minimal 32 karakter (jangan pakai contoh)
 - [ ] `SUPERADMIN_SETUP_PASSWORD` dihapus dari `.env` setelah login pertama berhasil
 - [ ] `NODE_ENV=production` + HTTPS (wajib bila diakses lewat internet)
-- [ ] `ALLOWED_ORIGINS` diisi domain produksi, tanpa wildcard
+- [ ] `ALLOWED_ORIGINS=https://talenta.skanbara.my.id` (origin persis, tanpa wildcard)
+- [ ] `HOST=0.0.0.0` (atau IP LAN server) dan `TRUST_PROXY=1`, karena cloudflared berjalan di perangkat lain
+- [ ] Cloudflare Tunnel mengarah ke `http://<IP-LAN-server>:3000` dan `http://<IP-LAN-server>:5000`
+- [ ] Firewall port 3000/5000 hanya mengizinkan IP perangkat cloudflared; jangan terbuka ke LAN lain/internet
 - [ ] Backup berkala database `ipt_school` + folder `backend/uploads/`
 - [ ] `npm audit` berkala; update dependensi tiap kuartal
 - [ ] Jangan commit file `.env` ke git (sudah ada di `.gitignore` - verifikasi)
@@ -39,8 +47,14 @@
 
 ## Batasan yang Diketahui
 
-- Rate limit berbasis IP: tidak efektif bila banyak user di belakang satu NAT/proxy
-  tanpa konfigurasi `TRUST_PROXY` yang benar (lihat komentar di `server.js`).
+- Rate limit login dibagi per IP dan per username. Jika `TRUST_PROXY` salah,
+  semua pengguna bisa terlihat berasal dari IP tunnel yang sama.
+- Karena cloudflared berada di perangkat lain, origin harus listen di interface
+  LAN. `TRUST_PROXY=1` hanya aman bila firewall membatasi port 3000/5000 ke IP
+  perangkat cloudflared; host LAN lain yang bisa connect dapat memalsukan
+  `X-Forwarded-For`.
 - Tidak ada 2FA; keamanan akun mengandalkan kekuatan password + rate limit login.
 - File `backend/.env` adalah satu-satunya penyimpanan secret - amankan permission-nya
   di server (`chmod 600` di Linux).
+- `style-src 'unsafe-inline'` masih diperlukan oleh sebagian komponen UI; CSP
+  tetap membatasi script ke origin sendiri.

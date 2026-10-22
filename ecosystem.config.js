@@ -13,11 +13,19 @@ module.exports = {
     restart_delay: 4000,
     env: {
       NODE_ENV: 'production',
-      PORT: 5000
+      PORT: 5000,
+      // cloudflared runs on another LAN host, so the origin cannot bind to
+      // loopback. Prefer this server's LAN IP here; 0.0.0.0 is the general
+      // fallback. Restrict ports 3000/5000 to the cloudflared host at the
+      // firewall.
+      HOST: process.env.HOST || '0.0.0.0',
+      TRUST_PROXY: '1'
     },
     env_development: {
       NODE_ENV: 'development',
-      PORT: 5000
+      PORT: 5000,
+      HOST: '127.0.0.1',
+      TRUST_PROXY: '1'
     },
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',

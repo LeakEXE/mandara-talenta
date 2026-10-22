@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
-const { loginLimiter } = require('../middleware/security');
+const { loginLimiter, loginAccountLimiter, forgotPasswordLimiter } = require('../middleware/security');
 const { logActivity } = require('../utils/logger');
 
 // Helper: true when the request actually arrived over HTTPS (direct or via proxy)
@@ -36,38 +36,60 @@ const setAuthCookie = (res, token, req) => {
     });
 };
 
-// Login (per-route limiter; don't share the budget with other /api/auth routes)
-router.post('/login', loginLimiter, async (req, res) => {
+// Valid bcrypt hash used to equalize timing when the username does not exist.
+// It is never accepted as a password; it only makes the "unknown user" path do
+// the same bcrypt work as the "known user" path.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('dummy-password-not-used', 10);
+
+// Login (per-route limiters; don't share the budget with other /api/auth routes)
+router.post('/login', loginLimiter, loginAccountLimiter, async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const username = typeof req.body?.username === 'string'
+            ? req.body.username.trim()
+            : '';
+        const password = typeof req.body?.password === 'string'
+            ? req.body.password
+            : '';
+
+        if (!username || !password || username.length > 100 || password.length > 200) {
+            return res.status(400).json({ message: 'Username atau password salah' });
+        }
 
         const [users] = await db.query(
             'SELECT id, nama, nis, nip, username, password, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, alamat, no_hp, detail, foto, tahun_pelajaran, is_graduated, jurusan, desil, must_change_credentials FROM users WHERE LOWER(username) = LOWER(?)',
             [username]
         );
 
-        if (users.length === 0) {
-            return res.status(400).json({ message: 'Username tidak ditemukan. Gunakan username Anda (bukan NIS/NIP).' });
-        }
+        const user = users[0];
 
-const user = users[0];
+        if (!user) {
+            // Burn the same bcrypt cost as a real password check so response
+            // timing does not reveal whether the username exists.
+            await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+            return res.status(400).json({ message: 'Username atau password salah' });
+        }
 
         if (user.nis === 'ADMIN001' && user.password === '$2a$10$YourHashedPasswordHere') {
             const setupPassword = process.env.SUPERADMIN_SETUP_PASSWORD;
             if (!setupPassword) {
-                return res.status(503).json({ message: 'Superadmin belum di-initialize. Set SUPERADMIN_SETUP_PASSWORD di file .env.' });
+                console.error('Superadmin bootstrap requested but SUPERADMIN_SETUP_PASSWORD is unset');
+                return res.status(503).json({ message: 'Login sedang tidak tersedia. Hubungi administrator.' });
             }
             if (password === setupPassword) {
-                const hashedPassword = bcrypt.hashSync(password, 10);
+                const hashedPassword = await bcrypt.hash(password, 10);
                 await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, user.id]);
                 user.password = hashedPassword;
             } else {
-                return res.status(400).json({ message: 'Invalid setup password' });
+                return res.status(400).json({ message: 'Username atau password salah' });
             }
         } else {
-            const isMatch = bcrypt.compareSync(password, user.password);
+            if (typeof user.password !== 'string' || user.password.length === 0) {
+                await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+                return res.status(400).json({ message: 'Username atau password salah' });
+            }
+            const isMatch = await bcrypt.compare(password, user.password);
             if (!isMatch) {
-                return res.status(400).json({ message: 'Invalid password' });
+                return res.status(400).json({ message: 'Username atau password salah' });
             }
         }
 
@@ -110,7 +132,7 @@ const user = users[0];
         });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ message: 'Server error: ' + error.message + '. Pastikan database sudah di-setup dengan benar.' });
+        res.status(500).json({ message: 'Terjadi kesalahan pada server' });
     }
 });
 
@@ -125,8 +147,14 @@ router.post('/logout', (req, res) => {
     res.json({ message: 'Logout successful' });
 });
 
-// Verify token endpoint (for frontend to check authentication status)
+// Verify token endpoint (for frontend to check authentication status).
+// enforceCredentialsChanged() has already verified the token and refreshed the
+// role from the database, so prefer req.user over the (possibly stale) JWT.
 router.get('/verify', (req, res) => {
+    if (req.user) {
+        return res.json({ valid: true, user: req.user });
+    }
+
     const token = req.cookies.token;
     if (!token) {
         return res.status(401).json({ message: 'No token provided' });
@@ -144,12 +172,11 @@ router.get('/verify', (req, res) => {
 // Creates the same password_reset_requests row the old Profile button made,
 // for superadmin approval. Always returns a generic message so callers can't
 // enumerate which usernames exist. Per-account spam is stopped by pending-dedup
-// + 12h cooldown below.
-// per-account spam by pending-dedup + 12h cooldown below.
+// plus the 12h cooldown below.
 const FORGOT_GENERIC_MESSAGE = 'Jika username terdaftar, permintaan reset telah dikirim ke SuperAdmin. Hubungi admin sekolah untuk tindak lanjut.';
 const FORGOT_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
     try {
         const rawUsername = req.body?.username;
         if (typeof rawUsername !== 'string' || rawUsername.trim().length === 0) {

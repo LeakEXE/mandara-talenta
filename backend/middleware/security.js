@@ -1,128 +1,61 @@
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-// Rate limiting for login attempts - stricter for security
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+// Rate limiting for login attempts - per source IP.
+// `trust proxy` is configured in server.js so this sees the real client IP
+// behind Cloudflare Tunnel instead of the local tunnel address.
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 FAILED login attempts per windowMs (generous: whole school shares one NAT IP)
+  windowMs: LOGIN_WINDOW_MS,
+  max: 100, // limit each IP to 100 FAILED login attempts per windowMs
   message: {
-    message: 'Too many login attempts, please try again after 15 minutes'
+    message: 'Terlalu banyak percobaan login, coba lagi setelah 15 menit'
   },
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true // Don't count successful logins
 });
 
-// NOTE: logout/forgot/general-API limiters were removed. The whole school
-// shares one NAT IP, so per-IP budgets throttled legitimate users.
-// Forgot-password abuse is still stopped per-account (pending-dedup + 12h
-// cooldown in routes/auth.js).
-
-// SQL Injection prevention middleware
-const sqlInjectionPrevention = (req, res, next) => {
-  const sqlPattern = /(\b(UNION\s+SELECT|SELECT\s+.*\s+FROM|INSERT\s+INTO|DROP\s+TABLE|DELETE\s+FROM|UPDATE\s+.*\s+SET|OR\s+\d+\s*=\s*\d+|AND\s+\d+\s*=\s*\d+|--|;\s*\w+\b)\b)/gi;
-
-  const checkValue = (value) => {
-    if (typeof value === 'string') {
-      return sqlPattern.test(value);
-    }
-    return false;
-  };
-  
-  const checkObject = (obj) => {
-    for (let key in obj) {
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        if (checkObject(obj[key])) return true;
-      } else if (checkValue(obj[key])) {
-        return true;
-      }
-    }
-    return false;
-  };
-  
-  // Check query params
-  if (checkObject(req.query)) {
-    return res.status(403).json({ message: 'Potentially malicious request detected (SQL Injection)' });
+// Second login budget keyed by username. This catches distributed attempts
+// against one account while the IP limiter catches attempts from one source.
+const loginAccountLimiter = rateLimit({
+  windowMs: LOGIN_WINDOW_MS,
+  max: 20, // failed attempts per username per windowMs
+  message: {
+    message: 'Terlalu banyak percobaan login untuk akun ini, coba lagi setelah 15 menit'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const username = typeof req.body?.username === 'string'
+      ? req.body.username.trim().toLowerCase().slice(0, 100)
+      : '';
+    // Missing usernames share one bucket; malformed requests are still counted.
+    return username || 'unknown-username';
   }
-  
-  // Check body
-  if (checkObject(req.body)) {
-    return res.status(403).json({ message: 'Potentially malicious request detected (SQL Injection)' });
-  }
-  
-  // Check params
-  if (checkObject(req.params)) {
-    return res.status(403).json({ message: 'Potentially malicious request detected (SQL Injection)' });
-  }
-  
-  next();
-};
+});
 
-// XSS Prevention - sanitize input
-const xssPrevention = (req, res, next) => {
-  const xssPattern = /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi;
-  
-  const sanitizeValue = (value) => {
-    if (typeof value === 'string') {
-      // Remove script tags
-      return value.replace(xssPattern, '');
-    }
-    return value;
-  };
-  
-  const sanitizeObject = (obj) => {
-    for (let key in obj) {
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        sanitizeObject(obj[key]);
-      } else {
-        obj[key] = sanitizeValue(obj[key]);
-      }
-    }
-  };
-  
-  if (req.body) sanitizeObject(req.body);
-  if (req.query) sanitizeObject(req.query);
-  if (req.params) sanitizeObject(req.params);
-  
-  next();
-};
-
-// Input sanitization - trim and escape
-const sanitizeInput = (req, res, next) => {
-  const escapeHtml = (text) => {
-    if (typeof text !== 'string') return text;
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  };
-  
-  const trimAndEscape = (obj) => {
-    for (let key in obj) {
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        trimAndEscape(obj[key]);
-      } else if (typeof obj[key] === 'string') {
-        obj[key] = escapeHtml(obj[key].trim());
-      }
-    }
-  };
-  
-  if (req.body) trimAndEscape(req.body);
-  if (req.query) trimAndEscape(req.query);
-  
-  next();
-};
+// Forgot-password is public, so give it a small IP budget in addition to the
+// per-account cooldown in routes/auth.js.
+const forgotPasswordLimiter = rateLimit({
+  windowMs: LOGIN_WINDOW_MS,
+  max: 10,
+  message: {
+    message: 'Terlalu banyak permintaan reset password, coba lagi nanti'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
 
 // Security headers configuration.
-// NOTE: `useDefaults: false` is critical while serving plain HTTP otherwise
-// Helmet merges in `upgrade-insecure-requests`, which makes browsers rewrite
-// every subresource (JS/CSS/favicon/API) from http:// to https:// and the
-// whole app fails to load on an HTTP-only origin. Re-enable the defaults
-// (or just that directive) once HTTPS terminates in front of the app.
-// COOP + Origin-Agent-Cluster are likewise disabled: browsers ignore them on
-// untrustworthy (plain-HTTP) origins and only log warnings about them.
+// The public site is served over HTTPS by Cloudflare Tunnel even though the
+// local origin is HTTP. `useDefaults: false` keeps Helmet from adding
+// `upgrade-insecure-requests` during local HTTP development; it is added only
+// in production.
+const isProduction = process.env.NODE_ENV === 'production';
+
 const securityHeaders = helmet({
   contentSecurityPolicy: {
     useDefaults: false,
@@ -137,13 +70,14 @@ const securityHeaders = helmet({
       mediaSrc: ["'self'"],
       // Allow blob: so client-generated PDF previews (URL.createObjectURL)
       // can render in <iframe>. frameAncestors is 'self' (not 'none') so our
-      // own EvidenceViewer iframes may embed /uploads PDFs external sites
+      // own EvidenceViewer iframes may embed /uploads PDFs; external sites
       // still cannot frame this app (clickjacking protection intact).
       frameSrc: ["'self'", "blob:"],
       frameAncestors: ["'self'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
-    },
+      ...(isProduction ? { upgradeInsecureRequests: [] } : {})
+    }
   },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
@@ -154,51 +88,135 @@ const securityHeaders = helmet({
     preload: true
   },
   noSniff: true,
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  xssFilter: true
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+  // xssFilter is obsolete. Helmet's default is X-XSS-Protection: 0;
+  // specifying the legacy option only makes the config misleading.
 });
 
-// Error handler that doesn't expose internal details
+// Error handler that doesn't expose internal details.
 const errorHandler = (err, req, res, next) => {
-  console.error('Error:', err);
-  
-  // Don't expose internal error details to client
-  const message = process.env.NODE_ENV === 'production' 
-    ? 'Internal server error' 
-    : err.message;
-  
-  res.status(err.status || 500).json({
-    message: message,
-    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const rawStatus = err?.status ?? err?.statusCode;
+  let status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+    ? rawStatus
+    : 500;
+
+  // Multer reports upload problems as errors without an HTTP status.
+  if (err?.code === 'LIMIT_FILE_SIZE') {
+    status = 413;
+  } else if (typeof err?.code === 'string' && err.code.startsWith('LIMIT_')) {
+    status = 400;
+  }
+
+  // Keep 5xx details server-side. 4xx messages are client-actionable (bad JSON,
+  // disallowed CORS origin, etc.) and do not expose stack traces.
+  if (status >= 500) {
+    console.error('Error:', err);
+  } else {
+    console.warn(`[${status}] ${req.method} ${req.path}: ${err?.message || 'Request error'}`);
+  }
+
+  let message = err?.message || 'Internal server error';
+  if (process.env.NODE_ENV === 'production') {
+    if (status >= 500) {
+      message = 'Internal server error';
+    } else if (err?.type === 'entity.parse.failed') {
+      message = 'Invalid JSON body';
+    }
+  }
+
+  res.status(status).json({
+    message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err?.stack })
   });
 };
 
-// Request logging for security audit
+const SENSITIVE_KEY = /pass(?:word|wd)?|token|authorization|cookie|secret|api[_-]?key|reset/i;
+const REDACTED = '[REDACTED]';
+const MAX_LOG_STRING = 500;
+const MAX_LOG_BODY_BYTES = 64 * 1024;
+
+const redact = (value, depth = 0) => {
+  if (depth > 4) return '[Truncated]';
+
+  if (typeof value === 'string') {
+    return value.length > MAX_LOG_STRING
+      ? `${value.slice(0, MAX_LOG_STRING)}...[truncated]`
+      : value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item) => redact(item, depth + 1));
+  }
+
+  if (value && typeof value === 'object') {
+    const result = Object.create(null);
+    for (const [key, child] of Object.entries(value)) {
+      result[key] = SENSITIVE_KEY.test(key) ? REDACTED : redact(child, depth + 1);
+    }
+    return result;
+  }
+
+  return value;
+};
+
+const safeStringify = (value) => {
+  try {
+    return JSON.stringify(redact(value));
+  } catch {
+    return '[Unserializable body]';
+  }
+};
+
+const sanitizeLogText = (value) => String(value || '')
+  .replace(/[\r\n\t]/g, ' ')
+  .slice(0, 1000);
+
+const redactUrl = (rawUrl) => {
+  try {
+    const parsed = new URL(rawUrl, 'http://localhost');
+    for (const key of parsed.searchParams.keys()) {
+      if (SENSITIVE_KEY.test(key)) {
+        parsed.searchParams.set(key, REDACTED);
+      }
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return sanitizeLogText(rawUrl);
+  }
+};
+
+// Request logging for security audit. Runs after body parsing in server.js so
+// bodies are visible, but sensitive fields are redacted before they reach logs.
 const securityLogger = (req, res, next) => {
   const timestamp = new Date().toISOString();
-  const ip = req.ip || req.connection.remoteAddress;
+  const ip = req.ip || req.socket?.remoteAddress;
   const method = req.method;
-  const url = req.originalUrl;
-  const userAgent = req.get('user-agent');
-  
-  // Log suspicious requests
+  const url = sanitizeLogText(redactUrl(req.originalUrl || req.url || ''));
+  const userAgent = sanitizeLogText(req.get('user-agent'));
+  const contentLength = Number(req.get('content-length') || 0);
+  const bodyStr = req.body === undefined || contentLength > MAX_LOG_BODY_BYTES
+    ? ''
+    : safeStringify(req.body);
+
   const suspiciousPatterns = /(<script|javascript:|onerror=|onload=|SELECT.*FROM|DROP.*TABLE)/i;
-  const bodyStr = JSON.stringify(req.body);
-  
-  if (suspiciousPatterns.test(url) || suspiciousPatterns.test(bodyStr)) {
+
+  if (suspiciousPatterns.test(url) || suspiciousPatterns.test(userAgent) || suspiciousPatterns.test(bodyStr)) {
     console.warn(`[SECURITY ALERT] ${timestamp} - Suspicious request from ${ip}: ${method} ${url}`);
     console.warn(`  User-Agent: ${userAgent}`);
-    console.warn(`  Body: ${bodyStr}`);
+    if (bodyStr) console.warn(`  Body: ${bodyStr}`);
   }
-  
+
   next();
 };
 
 module.exports = {
   loginLimiter,
-  sqlInjectionPrevention,
-  xssPrevention,
-  sanitizeInput,
+  loginAccountLimiter,
+  forgotPasswordLimiter,
   securityHeaders,
   errorHandler,
   securityLogger
