@@ -60,7 +60,8 @@ npm run db:setup
 cd backend
 npm install
 copy .env.example .env
-# Edit .env: DB_PASSWORD, JWT_SECRET, dan SUPERADMIN_SETUP_PASSWORD
+# Edit .env: DB_PASSWORD, JWT_SECRET, SUPERADMIN_SETUP_PASSWORD,
+# HCAPTCHA_SITE_KEY, dan HCAPTCHA_SECRET_KEY
 # (lihat backend/.env.example untuk daftar lengkap)
 npm run db:setup   # bila database ipt_school belum ada
 npm start
@@ -70,6 +71,8 @@ npm start
 ```bash
 cd frontend
 npm install
+copy .env.example .env
+# Isi REACT_APP_HCAPTCHA_SITE_KEY (sitekey yang sama dengan backend) di .env
 npm start
 ```
 
@@ -77,6 +80,11 @@ npm start
 - URL: http://localhost:3000
 - Login pertama: ADMIN001 + nilai `SUPERADMIN_SETUP_PASSWORD` dari `.env`
   (password otomatis di-hash; segera ganti lewat Profile lalu hapus variabel itu)
+
+> hCaptcha menolak hostname `localhost`/`127.0.0.1`. Untuk development lokal,
+> gunakan hosts alias (mis. `127.0.0.1 test.mydomain.com`), daftarkan hostname
+> itu pada sitekey, lalu buka `http://test.mydomain.com:3000`. Test key resmi
+> hCaptcha boleh dipakai untuk automated test, tetapi jangan di production.
 
 ---
 

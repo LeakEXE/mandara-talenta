@@ -269,13 +269,17 @@ DB_NAME=ipt_school
 # Security
 JWT_SECRET=your_random_secret_64_chars_minimum
 
+# hCaptcha (wajib untuk login)
+HCAPTCHA_SITE_KEY=your_hcaptcha_sitekey
+HCAPTCHA_SECRET_KEY=your_hcaptcha_secret
+
 # CORS (production)
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 
-### Frontend .env File (jika diperlukan)
+### Frontend .env File (diperlukan untuk build)
 ```env
-REACT_APP_API_URL=http://localhost:5000/api
+REACT_APP_HCAPTCHA_SITE_KEY=your_hcaptcha_sitekey
 ```
 
 ---

@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 import api from '../utils/api';
 import InstallAppButton from './InstallAppButton';
 
 // Default support link shown on the login page when school config has none set.
 const DEFAULT_SUPPORT_LINK = 'https://google.com';
+const CAPTCHA_SITE_KEY = process.env.REACT_APP_HCAPTCHA_SITE_KEY || '';
 
 function Login() {
   const [formData, setFormData] = useState({
@@ -17,6 +19,9 @@ function Login() {
   const [schoolConfig, setSchoolConfig] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaError, setCaptchaError] = useState('');
+  const captchaRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -36,22 +41,62 @@ function Login() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const resetCaptcha = () => {
+    setCaptchaToken('');
+    try {
+      captchaRef.current?.resetCaptcha();
+    } catch {
+      // If the widget failed to initialize, there is nothing to reset.
+    }
+  };
+
+  const handleCaptchaVerify = (token) => {
+    setCaptchaToken(token);
+    setCaptchaError('');
+  };
+
+  const handleCaptchaExpire = () => {
+    setCaptchaToken('');
+    setCaptchaError('Verifikasi keamanan kedaluwarsa. Silakan centang lagi.');
+  };
+
+  const handleCaptchaError = () => {
+    setCaptchaToken('');
+    setCaptchaError('Verifikasi keamanan gagal dimuat. Muat ulang halaman lalu coba lagi.');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
+
+    if (!CAPTCHA_SITE_KEY) {
+      setError('Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.');
+      return;
+    }
+
+    if (!captchaToken) {
+      setError('Silakan selesaikan verifikasi keamanan terlebih dahulu.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/login', formData);
-      
+      const response = await api.post('/auth/login', {
+        ...formData,
+        hcaptchaToken: captchaToken
+      });
+
       // Store user data in localStorage (not token - token is now in HTTP-only cookie)
       localStorage.setItem('user', JSON.stringify(response.data.user));
-      
+
       navigate(response.data.user.must_change_credentials ? '/setup-akun' : '/dashboard');
     } catch (error) {
       const status = error.response?.status;
       const headers = error.response?.headers || {};
-      // express-rate-limit sends RateLimit-Remaining (max 5 / 15 menit, sukses tidak dihitung)
+      // express-rate-limit sends RateLimit-Remaining. The account limiter runs
+      // last, so this is normally the remaining account budget (20/15 menit).
       if (headers['ratelimit-remaining'] !== undefined) {
         const remaining = parseInt(headers['ratelimit-remaining'], 10);
         if (!Number.isNaN(remaining)) {
@@ -65,6 +110,10 @@ function Login() {
       } else {
         setError(error.response?.data?.message || 'Login failed');
       }
+
+      // hCaptcha tokens are single-use. Even when the password was wrong, the
+      // next attempt needs a fresh token.
+      resetCaptcha();
     } finally {
       setLoading(false);
     }
@@ -216,7 +265,7 @@ function Login() {
             ? (attemptsLeft <= 0
               ? 'Kesempatan login habis. Tunggu sebelum mencoba lagi.'
               : `Tersisa ${attemptsLeft} percobaan login`)
-            : 'Demi keamanan, login dibatasi 5x percobaan per 15 menit.'}
+            : 'Demi keamanan, login dibatasi 100 percobaan per 15 menit per jaringan dan 20 percobaan per akun.'}
         </div>
 
         {error && (
@@ -344,9 +393,67 @@ function Login() {
             </button>
           </div>
 
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '.45rem'
+          }}>
+            {CAPTCHA_SITE_KEY ? (
+              <HCaptcha
+                ref={captchaRef}
+                sitekey={CAPTCHA_SITE_KEY}
+                onVerify={handleCaptchaVerify}
+                onExpire={handleCaptchaExpire}
+                onError={handleCaptchaError}
+                theme="light"
+                size="normal"
+                reCaptchaCompat={false}
+              />
+            ) : (
+              <div style={{
+                padding: '.7rem',
+                border: '1px solid #fcc',
+                borderRadius: '8px',
+                background: '#fee',
+                color: '#c33',
+                fontSize: '.82rem',
+                textAlign: 'center'
+              }}>
+                Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.
+              </div>
+            )}
+            {captchaError && (
+              <div style={{
+                color: '#b91c1c',
+                fontSize: '.78rem',
+                textAlign: 'center'
+              }}>
+                {captchaError}
+              </div>
+            )}
+            {CAPTCHA_SITE_KEY && (
+              <p style={{
+                margin: 0,
+                fontSize: '.7rem',
+                lineHeight: 1.45,
+                color: '#5b6478',
+                textAlign: 'center'
+              }}>
+                Situs ini dilindungi oleh{' '}
+                <a href="https://www.hcaptcha.com" target="_blank" rel="noopener noreferrer" style={{ color: '#28396b' }}>hCaptcha</a>
+                {' '}dan{' '}
+                <a href="https://www.hcaptcha.com/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#28396b' }}>Kebijakan Privasi</a>
+                {' '}serta{' '}
+                <a href="https://www.hcaptcha.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#28396b' }}>Ketentuan Layanan</a>
+                {' '}hCaptcha berlaku.
+              </p>
+            )}
+          </div>
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !captchaToken || !CAPTCHA_SITE_KEY}
             style={{
               position: 'relative',
               marginTop: '.2rem',
@@ -359,14 +466,14 @@ function Login() {
               fontWeight: '700',
               fontSize: '.98rem',
               letterSpacing: '.02em',
-              cursor: loading ? 'not-allowed' : 'pointer',
+              cursor: loading || !captchaToken || !CAPTCHA_SITE_KEY ? 'not-allowed' : 'pointer',
               overflow: 'hidden',
               transition: 'transform .15s ease, box-shadow .25s ease',
               boxShadow: '0 10px 22px rgba(53,74,134,.35)',
-              opacity: loading ? 0.7 : 1
+              opacity: loading || !captchaToken || !CAPTCHA_SITE_KEY ? 0.7 : 1
             }}
             onMouseEnter={(e) => {
-              if (!loading) {
+              if (!loading && captchaToken && CAPTCHA_SITE_KEY) {
                 e.target.style.transform = 'translateY(-1px)';
                 e.target.style.boxShadow = '0 12px 26px rgba(53,74,134,.42)';
               }

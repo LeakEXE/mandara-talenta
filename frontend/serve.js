@@ -12,19 +12,23 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 app.disable('x-powered-by');
 
+// Official hCaptcha CSP guidance: use the wildcard domains, never hard-code
+// region-specific asset subdomains such as newassets.hcaptcha.com.
+const HCAPTCHA_CSP = 'https://hcaptcha.com https://*.hcaptcha.com';
+
 // Keep the HTML response protected even if this process is the public origin
 // (the API server has its own Helmet configuration).
 app.use((req, res, next) => {
   const csp = [
     "default-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "script-src 'self'",
+    `style-src 'self' 'unsafe-inline' ${HCAPTCHA_CSP}`,
+    `script-src 'self' ${HCAPTCHA_CSP}`,
     "img-src 'self' data: blob:",
-    "connect-src 'self'",
+    `connect-src 'self' ${HCAPTCHA_CSP}`,
     "font-src 'self'",
     "object-src 'none'",
     "media-src 'self'",
-    "frame-src 'self' blob:",
+    `frame-src 'self' blob: ${HCAPTCHA_CSP}`,
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",
