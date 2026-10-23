@@ -1,33 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import Login from './components/Login';
-import ForgotPassword from './components/ForgotPassword';
-import ResetPassword from './components/ResetPassword';
-import FirstLoginSetup from './components/FirstLoginSetup';
-import Dashboard from './components/Dashboard';
 import Navbar from './components/Navbar';
-import InputPrestasi from './components/InputPrestasi';
-import InputOrganisasi from './components/InputOrganisasi';
-import InputKepanitiaan from './components/InputKepanitiaan';
-import InputEvent from './components/InputEvent';
-import InputPelanggaran from './components/InputPelanggaran';
-import InputPerilaku from './components/InputPerilaku';
-import KelolaAkun from './components/KelolaAkun';
-import IzinAkun from './components/IzinAkun';
-import Leaderboard from './components/Leaderboard';
-import Profile from './components/Profile';
-import Logs from './components/Logs';
-import WaliKelas from './components/WaliKelas';
-import TeacherWaliKelas from './components/TeacherWaliKelas';
-import Approvals from './components/Approvals';
-import DriveViewer from './components/DriveViewer';
-import Notifications from './components/Notifications';
-import LaporanCetak from './components/LaporanCetak';
-import KonfigurasiIPT from './components/KonfigurasiIPT';
-import SchoolConfig from './components/SchoolConfig';
-import StudentLookup from './components/StudentLookup';
 import api from './utils/api';
 import { Menu, X } from 'lucide-react';
+
+const Login = lazy(() => import('./components/Login'));
+const ForgotPassword = lazy(() => import('./components/ForgotPassword'));
+const ResetPassword = lazy(() => import('./components/ResetPassword'));
+const FirstLoginSetup = lazy(() => import('./components/FirstLoginSetup'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const InputPrestasi = lazy(() => import('./components/InputPrestasi'));
+const InputOrganisasi = lazy(() => import('./components/InputOrganisasi'));
+const InputKepanitiaan = lazy(() => import('./components/InputKepanitiaan'));
+const InputEvent = lazy(() => import('./components/InputEvent'));
+const InputPelanggaran = lazy(() => import('./components/InputPelanggaran'));
+const InputPerilaku = lazy(() => import('./components/InputPerilaku'));
+const KelolaAkun = lazy(() => import('./components/KelolaAkun'));
+const IzinAkun = lazy(() => import('./components/IzinAkun'));
+const Leaderboard = lazy(() => import('./components/Leaderboard'));
+const Profile = lazy(() => import('./components/Profile'));
+const Logs = lazy(() => import('./components/Logs'));
+const WaliKelas = lazy(() => import('./components/WaliKelas'));
+const TeacherWaliKelas = lazy(() => import('./components/TeacherWaliKelas'));
+const Approvals = lazy(() => import('./components/Approvals'));
+const DriveViewer = lazy(() => import('./components/DriveViewer'));
+const Notifications = lazy(() => import('./components/Notifications'));
+const LaporanCetak = lazy(() => import('./components/LaporanCetak'));
+const KonfigurasiIPT = lazy(() => import('./components/KonfigurasiIPT'));
+const SchoolConfig = lazy(() => import('./components/SchoolConfig'));
+const StudentLookup = lazy(() => import('./components/StudentLookup'));
 
 function ProtectedRoute({ children, allowedRoles }) {
   const [loading, setLoading] = useState(true);
@@ -123,6 +124,7 @@ function ProtectedRoute({ children, allowedRoles }) {
 function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Suspense fallback={<div className="loading"><div className="spinner"></div></div>}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/lupa-password" element={<ForgotPassword />} />
@@ -259,6 +261,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+      </Suspense>
     </Router>
   );
 }

@@ -20,8 +20,6 @@ const truncateName = (name, max = 20) => {
 };
 
 const isImageFile = (fileName) => /\.(jpe?g|png|gif|webp)$/i.test(fileName);
-const isVideoFile = (fileName) => /\.(mp4|mov|avi|webm)$/i.test(fileName);
-const isPdfFile = (fileName) => /\.pdf$/i.test(fileName);
 
 function DriveViewer() {
   const [folders, setFolders] = useState([]);

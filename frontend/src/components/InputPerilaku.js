@@ -96,10 +96,8 @@ function InputPerilaku() {
     fetchIptConfig();
     fetchPerilakuRatings();
     fetchUserSubmissions();
-    if (user.role === 'superadmin') {
-      fetchAllPerilaku(1);
-    } else if (user.role === 'guru' || user.role === 'pegawai') {
-      api.get('/permissions/my-permissions').then(r => { const allowed = !!r.data?.can_input_perilaku; setCanApprove(allowed); if (allowed) fetchAllPerilaku(); }).catch(() => setCanApprove(false));
+    if (user.role === 'guru' || user.role === 'pegawai') {
+      api.get('/permissions/my-permissions').then(r => { setCanApprove(!!r.data?.can_input_perilaku); }).catch(() => setCanApprove(false));
     }
   }, []);
 

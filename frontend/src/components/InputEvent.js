@@ -86,10 +86,8 @@ function InputEvent() {
     fetchUserSubmissions();
     checkAccess();
     fetchIptConfig();
-    if (user.role === 'superadmin') {
-      fetchAllEvent(1);
-    } else if (user.role === 'guru' || user.role === 'pegawai') {
-      api.get('/permissions/my-permissions').then(r => { const scopes = r.data?.approval_scopes || []; const allowed = scopes.includes('event'); setCanApprove(allowed); if (allowed) fetchAllEvent(); }).catch(() => setCanApprove(false));
+    if (user.role === 'guru' || user.role === 'pegawai') {
+      api.get('/permissions/my-permissions').then(r => { const scopes = r.data?.approval_scopes || []; setCanApprove(scopes.includes('event')); }).catch(() => setCanApprove(false));
     }
   }, []);
 
