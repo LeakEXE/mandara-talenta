@@ -107,6 +107,13 @@ DB_PORT=5432
 DB_NAME=ipt_school
 JWT_SECRET=string_acak_minimal_32_karakter
 SUPERADMIN_SETUP_PASSWORD=password_awal_rahasia
+HCAPTCHA_SITE_KEY=sitekey_dari_dashboard_hcaptcha
+HCAPTCHA_SECRET_KEY=secret_dari_dashboard_hcaptcha
+```
+
+Frontend juga membutuhkan sitekey publik saat build:
+```env
+REACT_APP_HCAPTCHA_SITE_KEY=sitekey_dari_dashboard_hcaptcha
 ```
 
 ---
@@ -387,7 +394,7 @@ mandara-talenta/
 │   │   └── database.js
 │   ├── middleware/
 │   │   ├── auth.js          # JWT, RBAC, cek izin input
-│   │   └── security.js      # rate limit, helmet, anti-SQLi
+│   │   └── security.js      # rate limit, helmet, hCaptcha CSP
 │   ├── routes/              # dipasang di server.js sebagai /api/*
 │   │   ├── auth.js            → /api/auth
 │   │   ├── users.js           → /api/users
@@ -469,6 +476,7 @@ mandara-talenta/
 | recharts | ^2.10.3 | Grafik dashboard |
 | lucide-react | ^1.41.0 | Sistem ikon |
 | react-select | ^5.10.2 | Dropdown kaya fitur |
+| @hcaptcha/react-hcaptcha | ^2.2.0 | CAPTCHA pada form login |
 | xlsx | ^0.18.5 | Excel export/import |
 | exceljs | ^4.4.0 | Template Excel |
 | jspdf | ^2.5.1 | PDF export |
@@ -485,6 +493,9 @@ mandara-talenta/
 - [ ] Update database credentials
 - [ ] Set NODE_ENV=production
 - [ ] Configure ALLOWED_ORIGINS
+- [ ] Configure `HCAPTCHA_SITE_KEY` / `HCAPTCHA_SECRET_KEY` di backend
+- [ ] Set `REACT_APP_HCAPTCHA_SITE_KEY` saat build frontend
+- [ ] Allow production hostname di sitekey hCaptcha
 - [ ] Enable HTTPS
 - [ ] Test all features
 - [ ] Run security audit: `npm audit`
@@ -517,7 +528,7 @@ mandara-talenta/
 ### Troubleshooting
 | Issue | Solution |
 |-------|----------|
-| Login fails | Check JWT_SECRET, database connection |
+| Login fails | Check JWT_SECRET, database connection, dan `HCAPTCHA_*` / `REACT_APP_HCAPTCHA_SITE_KEY` |
 | Avatar not loading | Check CORS headers, upload folder permissions |
 | Export fails | Check xlsx/jspdf dependencies |
 | Database error | Check PostgreSQL service, credentials in .env, run `npm run db:setup` |

@@ -3,7 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
-const { loginLimiter, loginAccountLimiter, forgotPasswordLimiter } = require('../middleware/security');
+const { loginLimiter, loginAccountLimiter, loginOutageLimiter, forgotPasswordLimiter } = require('../middleware/security');
+const { verifyHCaptcha } = require('../utils/hcaptcha');
 const { logActivity } = require('../utils/logger');
 
 // Helper: true when the request actually arrived over HTTPS (direct or via proxy)
@@ -41,8 +42,10 @@ const setAuthCookie = (res, token, req) => {
 // the same bcrypt work as the "known user" path.
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('dummy-password-not-used', 10);
 
-// Login (per-route limiters; don't share the budget with other /api/auth routes)
-router.post('/login', loginLimiter, loginAccountLimiter, async (req, res) => {
+// Login (per-route limiters; don't share the budget with other /api/auth routes).
+// The outage limiter is first so it can short-circuit a dependency outage
+// before the failed-credential budgets are touched.
+router.post('/login', loginOutageLimiter, loginLimiter, loginAccountLimiter, async (req, res) => {
     try {
         const username = typeof req.body?.username === 'string'
             ? req.body.username.trim()
@@ -50,9 +53,40 @@ router.post('/login', loginLimiter, loginAccountLimiter, async (req, res) => {
         const password = typeof req.body?.password === 'string'
             ? req.body.password
             : '';
+        const rawCaptchaToken = req.body?.hcaptchaToken ?? req.body?.['h-captcha-response'];
+        const captchaToken = typeof rawCaptchaToken === 'string'
+            ? rawCaptchaToken.trim()
+            : '';
 
         if (!username || !password || username.length > 100 || password.length > 200) {
             return res.status(400).json({ message: 'Username atau password salah' });
+        }
+
+        if (!captchaToken) {
+            return res.status(400).json({
+                message: 'Verifikasi keamanan wajib diselesaikan.',
+                code: 'CAPTCHA_REQUIRED'
+            });
+        }
+
+        // Verify hCaptcha before touching the database or bcrypt. A provider
+        // outage is a 503 (fail closed) and is deliberately not counted as a
+        // failed credential attempt by the login limiters.
+        const captchaResult = await verifyHCaptcha(captchaToken, req.ip);
+        if (!captchaResult.ok) {
+            if (captchaResult.unavailable) {
+                console.error(`[hCaptcha] verification unavailable: ${captchaResult.reason}`);
+                return res.status(503).json({
+                    message: 'Login sedang tidak tersedia. Coba lagi nanti.',
+                    code: 'LOGIN_UNAVAILABLE'
+                });
+            }
+
+            console.warn(`[hCaptcha] token rejected: ${captchaResult.reason}`);
+            return res.status(400).json({
+                message: 'Verifikasi keamanan tidak valid. Silakan coba lagi.',
+                code: 'CAPTCHA_INVALID'
+            });
         }
 
         const [users] = await db.query(

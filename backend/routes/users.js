@@ -304,6 +304,36 @@ router.get('/nama/:nama', auth, async (req, res) => {
     }
 });
 
+// Minimal active-student roster for selecting members of a group submission.
+// Students can use this without access to the broader /api/users listing.
+router.get('/group-members', auth, async (req, res) => {
+    try {
+        const allowedRoles = ['superadmin', 'guru', 'pegawai', 'siswa'];
+        if (!allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied.' });
+        }
+
+        const [students] = await db.query(
+            `SELECT nama, nis, kelas, grha, tahun_pelajaran, jurusan
+             FROM users
+             WHERE role = 'siswa' AND (is_graduated = 0 OR is_graduated IS NULL)
+             ORDER BY nama ASC`
+        );
+
+        res.json({
+            users: students.map((student) => ({
+                nama: student.nama,
+                nis: student.nis,
+                kelas: calculateFullClass(student.tahun_pelajaran, student.jurusan) || student.kelas,
+                grha: student.grha
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching group-member students:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 // Get all users (Superadmin and Teacher) - with pagination
 router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
     try {

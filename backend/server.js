@@ -35,6 +35,13 @@ const {
 
 const app = express();
 
+// hCaptcha is mandatory on login. If either backend key is missing, login
+// fails closed with 503 rather than silently disabling the CAPTCHA.
+if (process.env.NODE_ENV === 'production'
+  && (!process.env.HCAPTCHA_SITE_KEY || !process.env.HCAPTCHA_SECRET_KEY)) {
+  console.error('[security] HCAPTCHA_SITE_KEY / HCAPTCHA_SECRET_KEY is missing; login will fail closed.');
+}
+
 // Prometheus scrape endpoint for the Grafana stack. Mounted before rate
 // limiting and auth so the scraper is never blocked or challenged.
 // Scrape target: http://<host>:5000/metrics

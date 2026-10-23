@@ -3,6 +3,14 @@ const helmet = require('helmet');
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
+// A 5xx means the server or a dependency (hCaptcha, database) failed, not that
+// the submitted credentials were wrong. Do not spend the failed-credential
+// budget on those responses. 429 is still counted so a limiter cannot reset
+// its own budget by answering with 429.
+const didNotFailCredentials = (req, res) => (
+  res.statusCode < 400 || res.statusCode >= 500
+);
+
 // Rate limiting for login attempts - per source IP.
 // `trust proxy` is configured in server.js so this sees the real client IP
 // behind Cloudflare Tunnel instead of the local tunnel address.
@@ -14,7 +22,8 @@ const loginLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipSuccessfulRequests: true // Don't count successful logins
+  skipSuccessfulRequests: true, // Don't count successful logins
+  requestWasSuccessful: didNotFailCredentials
 });
 
 // Second login budget keyed by username. This catches distributed attempts
@@ -28,6 +37,7 @@ const loginAccountLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
+  requestWasSuccessful: didNotFailCredentials,
   keyGenerator: (req) => {
     const username = typeof req.body?.username === 'string'
       ? req.body.username.trim().toLowerCase().slice(0, 100)
@@ -35,6 +45,24 @@ const loginAccountLimiter = rateLimit({
     // Missing usernames share one bucket; malformed requests are still counted.
     return username || 'unknown-username';
   }
+});
+
+// Outage-only safety valve: when hCaptcha or the database is down, login
+// returns 5xx and the credential limiters intentionally ignore it. This short
+// window still caps how many failing login requests one IP can make, without
+// locking users out for 15 minutes after the dependency recovers.
+const loginOutageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: {
+    message: 'Layanan login sedang sibuk, coba lagi sebentar lagi'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  // Count only service failures (and the limiter's own 429). Normal 4xx
+  // credential failures are already covered by loginLimiter.
+  requestWasSuccessful: (req, res) => res.statusCode < 500 && res.statusCode !== 429
 });
 
 // Forgot-password is public, so give it a small IP budget in addition to the
@@ -56,15 +84,19 @@ const forgotPasswordLimiter = rateLimit({
 // in production.
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Official hCaptcha CSP guidance: use the wildcard domains, never hard-code
+// region-specific asset subdomains such as newassets.hcaptcha.com.
+const HCAPTCHA_CSP_SOURCES = ['https://hcaptcha.com', 'https://*.hcaptcha.com'];
+
 const securityHeaders = helmet({
   contentSecurityPolicy: {
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", ...HCAPTCHA_CSP_SOURCES],
+      scriptSrc: ["'self'", ...HCAPTCHA_CSP_SOURCES],
       imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", ...HCAPTCHA_CSP_SOURCES],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
@@ -72,7 +104,7 @@ const securityHeaders = helmet({
       // can render in <iframe>. frameAncestors is 'self' (not 'none') so our
       // own EvidenceViewer iframes may embed /uploads PDFs; external sites
       // still cannot frame this app (clickjacking protection intact).
-      frameSrc: ["'self'", "blob:"],
+      frameSrc: ["'self'", "blob:", ...HCAPTCHA_CSP_SOURCES],
       frameAncestors: ["'self'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -134,7 +166,7 @@ const errorHandler = (err, req, res, next) => {
   });
 };
 
-const SENSITIVE_KEY = /pass(?:word|wd)?|token|authorization|cookie|secret|api[_-]?key|reset/i;
+const SENSITIVE_KEY = /pass(?:word|wd)?|token|captcha|authorization|cookie|secret|api[_-]?key|reset/i;
 const REDACTED = '[REDACTED]';
 const MAX_LOG_STRING = 500;
 const MAX_LOG_BODY_BYTES = 64 * 1024;
@@ -216,6 +248,7 @@ const securityLogger = (req, res, next) => {
 module.exports = {
   loginLimiter,
   loginAccountLimiter,
+  loginOutageLimiter,
   forgotPasswordLimiter,
   securityHeaders,
   errorHandler,

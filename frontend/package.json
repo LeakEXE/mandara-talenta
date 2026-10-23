@@ -5,6 +5,7 @@
   "private": true,
   "proxy": "http://127.0.0.1:5000",
   "dependencies": {
+    "@hcaptcha/react-hcaptcha": "^2.2.0",
     "aos": "^2.3.4",
     "axios": "^1.6.2",
     "exceljs": "^4.4.0",

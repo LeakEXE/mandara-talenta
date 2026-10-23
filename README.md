@@ -169,6 +169,8 @@ DB_PORT=5432
 DB_NAME=ipt_school
 PORT=5000
 JWT_SECRET=your_jwt_secret_key_here_change_in_production
+HCAPTCHA_SITE_KEY=sitekey_dari_dashboard_hcaptcha
+HCAPTCHA_SECRET_KEY=secret_dari_dashboard_hcaptcha
 ```
 
 #### 4. Setup Frontend
@@ -176,6 +178,19 @@ JWT_SECRET=your_jwt_secret_key_here_change_in_production
 cd frontend
 npm install
 ```
+
+Login memakai hCaptcha. Frontend juga membutuhkan sitekey publik - isi
+`frontend/.env` untuk development atau environment variable saat build:
+
+```env
+REACT_APP_HCAPTCHA_SITE_KEY=sitekey_dari_dashboard_hcaptcha
+```
+
+hCaptcha menolak hostname `localhost`/`127.0.0.1`. Untuk development lokal,
+tambahkan hosts entry (misalnya `127.0.0.1 test.mydomain.com`), buka aplikasi
+lewat `http://test.mydomain.com:3000`, dan daftarkan hostname tersebut pada
+sitekey. Untuk automated test, gunakan test key resmi hCaptcha - jangan pernah
+memakai test key di production.
 
 #### 5. Jalankan Backend
 ```bash
@@ -274,7 +289,7 @@ mandara-talenta/
 │   │   └── database.js
 │   ├── middleware/
 │   │   ├── auth.js          # JWT, RBAC, cek izin input
-│   │   └── security.js      # rate limit, helmet, anti-SQLi
+│   │   └── security.js      # rate limit, helmet, hCaptcha CSP
 │   ├── routes/              # terpasang sebagai /api/* di server.js
 │   │   ├── auth.js, users.js, profile.js, permissions.js, input-access.js
 │   │   ├── prestasi.js, organisasi.js, kepanitiaan.js
