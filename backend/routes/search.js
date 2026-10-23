@@ -175,8 +175,6 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
                 LIMIT 20
             `);
 
-            console.log('Pembina leaderboard data:', teachers);
-
             return res.json(teachers.map((teacher, index) => ({
                 ...teacher,
                 jabatan: teacher.jabatan || 'Guru', // Default to 'Guru' if empty
