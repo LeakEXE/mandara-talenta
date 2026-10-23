@@ -85,10 +85,8 @@ function InputKepanitiaan() {
     fetchUserSubmissions();
     checkAccess();
     fetchIptConfig();
-    if (user.role === 'superadmin') {
-      fetchAllKepanitiaan(1);
-    } else if (user.role === 'guru' || user.role === 'pegawai') {
-      api.get('/permissions/my-permissions').then(r => { const scopes = r.data?.approval_scopes || []; const allowed = scopes.includes('kepanitiaan'); setCanApprove(allowed); if (allowed) fetchAllKepanitiaan(); }).catch(() => setCanApprove(false));
+    if (user.role === 'guru' || user.role === 'pegawai') {
+      api.get('/permissions/my-permissions').then(r => { const scopes = r.data?.approval_scopes || []; setCanApprove(scopes.includes('kepanitiaan')); }).catch(() => setCanApprove(false));
     }
   }, []);
 
