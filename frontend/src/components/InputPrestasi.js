@@ -32,6 +32,8 @@ function InputPrestasi() {
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState([]);
+  const [studentsLoading, setStudentsLoading] = useState(true);
+  const [studentsError, setStudentsError] = useState('');
   const [submissions, setSubmissions] = useState([]);
   const [hasAccess, setHasAccess] = useState(true);
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -432,13 +434,17 @@ function InputPrestasi() {
   };
 
   const fetchStudents = async () => {
+    setStudentsLoading(true);
+    setStudentsError('');
     try {
-      const response = await api.get('/users?role=siswa&limit=500');
-      // Use the new pagination format
+      const response = await api.get('/users/group-members');
       const studentList = response.data.users || [];
       setStudents(studentList);
     } catch (error) {
       console.error('Error fetching students:', error);
+      setStudentsError('Gagal memuat daftar siswa untuk anggota kelompok. Silakan muat ulang halaman.');
+    } finally {
+      setStudentsLoading(false);
     }
   };
 
@@ -1123,8 +1129,11 @@ function InputPrestasi() {
               value={selectedMembers}
               onChange={(selected) => setSelectedMembers(selected || [])}
               options={students.map(student => ({ value: student.nis, label: `${student.nama} (${student.nis})`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
-              placeholder="Pilih 2 siswa atau lebih..."
+              placeholder={studentsLoading ? 'Memuat daftar siswa...' : 'Pilih 2 siswa atau lebih...'}
               isSearchable
+              isLoading={studentsLoading}
+              isDisabled={studentsLoading || students.length === 0}
+              noOptionsMessage={() => studentsError ? 'Daftar siswa gagal dimuat' : 'Tidak ada siswa aktif'}
               styles={{
                 control: (provided) => ({
                   ...provided,
@@ -1132,6 +1141,11 @@ function InputPrestasi() {
                 })
               }}
             />
+            {studentsError && (
+              <div className="alert alert-danger" role="alert" style={{ marginTop: '8px' }}>
+                {studentsError}
+              </div>
+            )}
             {selectedMembers.length > 0 && (
               <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>
                 {selectedMembers.length} siswa dipilih: {selectedMembers.map(m => m.nama).join(', ')}
