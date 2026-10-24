@@ -44,3 +44,4 @@ patches
 *.old
 **.test.*
 *.sql
+!backend/database/migrate_student_nisn.sql

@@ -28,6 +28,7 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     nama VARCHAR(100) NOT NULL,
     nis VARCHAR(20) UNIQUE,
+    nisn VARCHAR(10) CHECK (nisn IS NULL OR nisn ~ '^[0-9]{10}$'),
     nip VARCHAR(30),
     username VARCHAR(20) UNIQUE,
     password VARCHAR(255) NOT NULL,
@@ -50,6 +51,8 @@ CREATE TABLE users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS users_nisn_unique
+    ON users (nisn) WHERE nisn IS NOT NULL;
 CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users (LOWER(username));

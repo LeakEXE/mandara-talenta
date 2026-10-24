@@ -722,13 +722,17 @@ function Profile() {
                 <input type="text" value={editData.nis || ''} disabled />
               </div>
               <div className="form-group">
+                <label>NISN</label>
+                <input type="text" value={editData.nisn || ''} disabled />
+              </div>
+              <div className="form-group">
                 <label>Jurusan</label>
                 <input type="text" value={editData.jurusan || '-'} disabled />
               </div>
               <div className="form-group">
                 <label>Tahun Pelajaran Masuk</label>
                 <input type="text" value={editData.tahun_pelajaran || '-'} disabled />
-                <div className="form-helper-text">NIS, jurusan, dan tahun pelajaran hanya dapat diubah oleh admin.</div>
+                <div className="form-helper-text">NIS, NISN, jurusan, dan tahun pelajaran hanya dapat diubah oleh admin.</div>
               </div>
               <div className="form-group">
                 <label>No HP</label>
@@ -800,6 +804,7 @@ function Profile() {
         {user.role === 'siswa' && (
           <>
             <p><strong>NIS:</strong> {profile?.nis || '-'}</p>
+            <p><strong>NISN:</strong> {profile?.nisn || '-'}</p>
             <p><strong>Kelas:</strong> {profile?.kelas || '-'}</p>
             <p><strong>Jurusan:</strong> {profile?.jurusan || '-'}</p>
             <p><strong>Tahun Pelajaran Masuk:</strong> {profile?.tahun_pelajaran || '-'}</p>

@@ -413,6 +413,14 @@ mandara-talenta/
   `node scripts/runMigration.js database/migrate_evidence_files.sql`
 - Migrasi tersebut membuat tabel bukti dan menyalin path foto lama agar dapat tetap ditampilkan serta dikelola sebagai bukti.
 
+### NISN Siswa
+- NISN bersifat opsional dan harus berupa 10 angka; nilainya disimpan sebagai teks agar angka nol di awal tetap terjaga.
+- Untuk database yang sudah ada, jalankan dari folder `backend`:
+  `node scripts/runMigration.js database/migrate_student_nisn.sql`
+- NISN dapat diisi saat membuat atau mengedit akun siswa, maupun melalui kolom NISN pada template import siswa.
+- Untuk memperbarui biodata banyak siswa berdasarkan NIS, gunakan `backend/scripts/updateStudentsFromCsv.js`. Sertakan kolom `nis` sebagai kunci dan kolom biodata yang ingin diubah; tanpa `--yes` skrip hanya menampilkan pratinjau. Contoh: `node scripts/updateStudentsFromCsv.js siswa.csv --yes`.
+- Kolom NISN hanya dapat dipakai setelah migrasi dijalankan. Sel kosong tidak mengubah data, dan kelas dihitung otomatis dari tahun pelajaran serta jurusan.
+
 ## Catatan Penting
 
 - Setiap siswa baru otomatis mendapatkan 80 poin IPT awal
