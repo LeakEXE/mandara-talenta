@@ -23,15 +23,15 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           command_timeout: 30m
-          script: |
-            cd /d "${{ secrets.PROJECT_PATH }}" || exit /b 1
-            git pull --ff-only || exit /b 1
-            node --version || exit /b 1
-            call npm --version || exit /b 1
-            if not exist logs mkdir logs
-            call npm install --no-audit --no-fund || exit /b 1
-            cd backend || exit /b 1
-            call npm install --no-audit --no-fund || exit /b 1
+          script: >-
+            cd /d "${{ secrets.PROJECT_PATH }}" &&
+            git pull --ff-only &&
+            node --version &&
+            call npm --version &&
+            (if not exist logs mkdir logs) &&
+            call npm install --no-audit --no-fund &&
+            cd backend &&
+            call npm install --no-audit --no-fund
 
       - name: Build frontend
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -41,12 +41,12 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           command_timeout: 30m
-          script: |
-            cd /d "${{ secrets.PROJECT_PATH }}\frontend" || exit /b 1
-            if exist build rmdir /s /q build
-            call npm install --no-audit --no-fund || exit /b 1
-            call npm run build || exit /b 1
-            if not exist build\index.html exit /b 1
+          script: >-
+            cd /d "${{ secrets.PROJECT_PATH }}\frontend" &&
+            (if exist build rmdir /s /q build) &&
+            call npm install --no-audit --no-fund &&
+            call npm run build &&
+            dir build\index.html >nul 2>nul
 
       - name: Restart application
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -56,11 +56,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           command_timeout: 30m
-          script: |
-            cd /d "${{ secrets.PROJECT_PATH }}" || exit /b 1
-            call pm2 restart ${{ secrets.PM2_APP_NAME }} --update-env || call pm2 start ecosystem.config.js
-            if errorlevel 1 exit /b 1
-            call pm2 save || exit /b 1
+          script: >-
+            cd /d "${{ secrets.PROJECT_PATH }}" &&
+            (call pm2 restart ${{ secrets.PM2_APP_NAME }} --update-env || call pm2 start ecosystem.config.js) &&
+            call pm2 save
 
       - name: Verify deployment
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
@@ -70,10 +69,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           command_timeout: 5m
-          script: |
-            "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul
-            "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ || exit /b 1
-            echo SMOKE TEST OK
+          script: >-
+            "%SystemRoot%\System32\PING.EXE" -n 16 127.0.0.1 >nul &&
+            "%SystemRoot%\System32\curl.exe" -f -s -o nul http://localhost:5000/ &&
+            echo SMOKE TEST OK &&
             echo Deployment completed successfully
 
       - name: Notify Discord - Success
