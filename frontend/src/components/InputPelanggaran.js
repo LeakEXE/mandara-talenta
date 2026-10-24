@@ -23,6 +23,8 @@ function InputPelanggaran() {
   const [loading, setLoading] = useState(false);
   const [, setIsAutoFilled] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [editingPendingSubmission, setEditingPendingSubmission] = useState(false);
   const [allPelanggaran, setAllPelanggaran] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
@@ -71,6 +73,7 @@ function InputPelanggaran() {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setUserRole(user.role || '');
+    setCurrentUserId(Number(user.id) || null);
 
     // Check permission for pelanggaran access
     const checkPermission = async () => {
@@ -330,6 +333,12 @@ function InputPelanggaran() {
   };
 
   const handleEdit = (item) => {
+    setEditingPendingSubmission(false);
+    editModal.openEditModal(item);
+  };
+
+  const handleEditSubmission = (item) => {
+    setEditingPendingSubmission(true);
     editModal.openEditModal(item);
   };
 
@@ -443,10 +452,18 @@ function InputPelanggaran() {
       editModal.editFoto.forEach((file) => data.append('foto', file));
       data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
-      await api.put(`/pelanggaran/${editModal.editingItem.id}`, data);
+      const endpoint = editingPendingSubmission
+        ? `/approvals/user-submissions/pelanggaran/${editModal.editingItem.id}`
+        : `/pelanggaran/${editModal.editingItem.id}`;
+      await api.put(endpoint, data);
 
-      setMessage('Pelanggaran berhasil diperbarui!');
-      fetchAllPelanggaran();
+      setMessage(editingPendingSubmission ? 'Pengajuan pelanggaran berhasil diperbarui!' : 'Pelanggaran berhasil diperbarui!');
+      if (editingPendingSubmission) {
+        fetchUserSubmissions();
+        setEditingPendingSubmission(false);
+      } else {
+        fetchAllPelanggaran();
+      }
       editModal.closeEditModal();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal memperbarui pelanggaran');
@@ -916,8 +933,8 @@ function InputPelanggaran() {
         </div>
       </EditModal>
 
-      {/* Submission History - Hidden for Superadmin and approvers */}
-      {userRole !== 'superadmin' && !canApprove && (
+      {/* Keep personal submission history visible to approvers as well. */}
+      {submissions.length > 0 && (
         <div style={{ marginTop: '30px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList size={18} /> Riwayat Pengajuan Pelanggaran</h3>
           {submissions.length === 0 ? (
@@ -949,6 +966,11 @@ function InputPelanggaran() {
                   </div>
                   <div>
                     {getStatusBadge(sub.status)}
+                    {sub.status === 'pending' && Number(sub.submitted_by) === currentUserId && (
+                      <button className="btn btn-info" onClick={() => handleEditSubmission(sub)} style={{ display: 'block', marginTop: '8px', padding: '4px 10px', fontSize: '12px' }}>
+                        Edit
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

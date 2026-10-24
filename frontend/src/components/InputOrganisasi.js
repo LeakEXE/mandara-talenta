@@ -27,6 +27,8 @@ function InputOrganisasi() {
   const [accessMessage, setAccessMessage] = useState('');
   const [, setIsAutoFilled] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [editingPendingSubmission, setEditingPendingSubmission] = useState(false);
   const [allOrganisasi, setAllOrganisasi] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
@@ -72,6 +74,7 @@ function InputOrganisasi() {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setUserRole(user.role || '');
+    setCurrentUserId(Number(user.id) || null);
 
     // Auto-fill biodata for siswa
     if (user.role === 'siswa') {
@@ -327,6 +330,12 @@ function InputOrganisasi() {
   };
 
   const handleEdit = (item) => {
+    setEditingPendingSubmission(false);
+    editModal.openEditModal(item);
+  };
+
+  const handleEditSubmission = (item) => {
+    setEditingPendingSubmission(true);
     editModal.openEditModal(item);
   };
 
@@ -438,10 +447,18 @@ function InputOrganisasi() {
       editModal.editFoto.forEach((file) => data.append('foto', file));
       data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
-      await api.put(`/organisasi/${editModal.editingItem.id}`, data);
+      const endpoint = editingPendingSubmission
+        ? `/approvals/user-submissions/organisasi/${editModal.editingItem.id}`
+        : `/organisasi/${editModal.editingItem.id}`;
+      await api.put(endpoint, data);
 
-      setMessage('Organisasi berhasil diperbarui!');
-      fetchAllOrganisasi();
+      setMessage(editingPendingSubmission ? 'Pengajuan organisasi berhasil diperbarui!' : 'Organisasi berhasil diperbarui!');
+      if (editingPendingSubmission) {
+        fetchUserSubmissions();
+        setEditingPendingSubmission(false);
+      } else {
+        fetchAllOrganisasi();
+      }
       editModal.closeEditModal();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal memperbarui organisasi');
@@ -927,8 +944,8 @@ function InputOrganisasi() {
         </div>
       </EditModal>
 
-      {/* Submission History - Hidden for approvers */}
-      {!canApprove && submissions.length > 0 && (
+      {/* Keep personal submission history visible to approvers as well. */}
+      {submissions.length > 0 && (
         <div style={{ marginTop: '30px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList size={18} /> Riwayat Pengajuan Organisasi</h3>
           <div style={{ display: 'grid', gap: '10px' }}>
@@ -954,6 +971,11 @@ function InputOrganisasi() {
                 </div>
                 <div>
                   {getStatusBadge(sub.status)}
+                  {sub.status === 'pending' && Number(sub.submitted_by) === currentUserId && (
+                    <button className="btn btn-info" onClick={() => handleEditSubmission(sub)} style={{ display: 'block', marginTop: '8px', padding: '4px 10px', fontSize: '12px' }}>
+                      Edit
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

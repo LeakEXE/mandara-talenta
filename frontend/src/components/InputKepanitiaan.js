@@ -28,6 +28,8 @@ function InputKepanitiaan() {
   const [accessMessage, setAccessMessage] = useState('');
   const [, setIsAutoFilled] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [editingPendingSubmission, setEditingPendingSubmission] = useState(false);
   const [allKepanitiaan, setAllKepanitiaan] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
@@ -66,6 +68,7 @@ function InputKepanitiaan() {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setUserRole(user.role || '');
+    setCurrentUserId(Number(user.id) || null);
 
     // Auto-fill biodata for siswa
     if (user.role === 'siswa') {
@@ -308,6 +311,12 @@ function InputKepanitiaan() {
   };
 
   const handleEdit = (item) => {
+    setEditingPendingSubmission(false);
+    editModal.openEditModal(item);
+  };
+
+  const handleEditSubmission = (item) => {
+    setEditingPendingSubmission(true);
     editModal.openEditModal(item);
   };
 
@@ -421,10 +430,18 @@ function InputKepanitiaan() {
       editModal.editFoto.forEach((file) => data.append('foto', file));
       data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
-      await api.put(`/kepanitiaan/${editModal.editingItem.id}`, data);
+      const endpoint = editingPendingSubmission
+        ? `/approvals/user-submissions/kepanitiaan/${editModal.editingItem.id}`
+        : `/kepanitiaan/${editModal.editingItem.id}`;
+      await api.put(endpoint, data);
 
-      setMessage('Kepanitiaan berhasil diperbarui!');
-      fetchAllKepanitiaan();
+      setMessage(editingPendingSubmission ? 'Pengajuan kepanitiaan berhasil diperbarui!' : 'Kepanitiaan berhasil diperbarui!');
+      if (editingPendingSubmission) {
+        fetchUserSubmissions();
+        setEditingPendingSubmission(false);
+      } else {
+        fetchAllKepanitiaan();
+      }
       editModal.closeEditModal();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal memperbarui kepanitiaan');
@@ -909,8 +926,8 @@ function InputKepanitiaan() {
         </div>
       </EditModal>
 
-      {/* Submission History - Hidden for approvers */}
-      {!canApprove && submissions.length > 0 && (
+      {/* Keep personal submission history visible to approvers as well. */}
+      {submissions.length > 0 && (
         <div style={{ marginTop: '30px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList size={18} /> Riwayat Pengajuan Kepanitiaan</h3>
           <div style={{ display: 'grid', gap: '10px' }}>
@@ -936,6 +953,11 @@ function InputKepanitiaan() {
                 </div>
                 <div>
                   {getStatusBadge(sub.status)}
+                  {sub.status === 'pending' && Number(sub.submitted_by) === currentUserId && (
+                    <button className="btn btn-info" onClick={() => handleEditSubmission(sub)} style={{ display: 'block', marginTop: '8px', padding: '4px 10px', fontSize: '12px' }}>
+                      Edit
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

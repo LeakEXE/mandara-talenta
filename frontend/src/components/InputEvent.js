@@ -28,6 +28,8 @@ function InputEvent() {
   const [accessMessage, setAccessMessage] = useState('');
   const [, setIsAutoFilled] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [editingPendingSubmission, setEditingPendingSubmission] = useState(false);
   const [allEvent, setAllEvent] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
@@ -67,6 +69,7 @@ function InputEvent() {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setUserRole(user.role || '');
+    setCurrentUserId(Number(user.id) || null);
 
     // Auto-fill biodata for siswa
     if (user.role === 'siswa') {
@@ -317,6 +320,12 @@ function InputEvent() {
   };
 
   const handleEdit = (item) => {
+    setEditingPendingSubmission(false);
+    editModal.openEditModal(item);
+  };
+
+  const handleEditSubmission = (item) => {
+    setEditingPendingSubmission(true);
     editModal.openEditModal(item);
   };
 
@@ -430,10 +439,18 @@ function InputEvent() {
       editModal.editFoto.forEach((file) => data.append('foto', file));
       data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
-      await api.put(`/event/${editModal.editingItem.id}`, data);
+      const endpoint = editingPendingSubmission
+        ? `/approvals/user-submissions/event/${editModal.editingItem.id}`
+        : `/event/${editModal.editingItem.id}`;
+      await api.put(endpoint, data);
 
-      setMessage('Event berhasil diperbarui!');
-      fetchAllEvent();
+      setMessage(editingPendingSubmission ? 'Pengajuan event berhasil diperbarui!' : 'Event berhasil diperbarui!');
+      if (editingPendingSubmission) {
+        fetchUserSubmissions();
+        setEditingPendingSubmission(false);
+      } else {
+        fetchAllEvent();
+      }
       editModal.closeEditModal();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal memperbarui event');
@@ -920,8 +937,8 @@ function InputEvent() {
         </div>
       </EditModal>
 
-      {/* Submission History - Hidden for approvers */}
-      {!canApprove && submissions.length > 0 && (
+      {/* Keep personal submission history visible to approvers as well. */}
+      {submissions.length > 0 && (
         <div style={{ marginTop: '30px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList size={18} /> Riwayat Pengajuan Event</h3>
           <div style={{ display: 'grid', gap: '10px' }}>
@@ -947,6 +964,11 @@ function InputEvent() {
                 </div>
                 <div>
                   {getStatusBadge(sub.status)}
+                  {sub.status === 'pending' && Number(sub.submitted_by) === currentUserId && (
+                    <button className="btn btn-info" onClick={() => handleEditSubmission(sub)} style={{ display: 'block', marginTop: '8px', padding: '4px 10px', fontSize: '12px' }}>
+                      Edit
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
