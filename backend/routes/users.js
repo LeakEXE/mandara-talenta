@@ -21,7 +21,7 @@ const { gradePrefixFromKelas, getIptAwalForGrade } = require('../utils/iptConfig
 const { syncBiodataChange } = require('../utils/biodataSync');
 const { deletePhotoIfOrphan } = require('../utils/fileUtils');
 const { generateUsername, validateUsernameFormat, isUsernameAvailable } = require('../utils/username');
-const { normalizeGender, normalizeDesil } = require('../utils/studentFields');
+const { normalizeNisn, normalizeGender, normalizeDesil } = require('../utils/studentFields');
 
 // Resolve the class a staff member is wali kelas of: current academic year
 // first, otherwise the most recent assignment. Mirrors /wali-kelas/my-class so
@@ -342,11 +342,11 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
 
         // If guru/pegawai, only return students (excluding graduated)
         if (req.user.role === 'guru' || req.user.role === 'pegawai') {
-            let query = 'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE role = ? AND (is_graduated = 0 OR is_graduated IS NULL)';
+            let query = 'SELECT id, nama, nis, nisn, nip, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE role = ? AND (is_graduated = 0 OR is_graduated IS NULL)';
             let params = ['siswa'];
 
             if (search) {
-                const tokenSearch = buildTokenSearchClause('nama', ['nis'], search);
+                const tokenSearch = buildTokenSearchClause('nama', ['nis', 'nisn'], search);
                 query += ` AND ${tokenSearch.clause}`;
                 params.push(...tokenSearch.params);
             }
@@ -360,7 +360,7 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
             let countQuery = 'SELECT COUNT(*) as total FROM users WHERE role = ? AND (is_graduated = 0 OR is_graduated IS NULL)';
             let countParams = ['siswa'];
             if (search) {
-                const tokenSearch = buildTokenSearchClause('nama', ['nis'], search);
+                const tokenSearch = buildTokenSearchClause('nama', ['nis', 'nisn'], search);
                 countQuery += ` AND ${tokenSearch.clause}`;
                 countParams.push(...tokenSearch.params);
             }
@@ -387,7 +387,7 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
         }
 
         // If superadmin, return all users (including graduated)
-        let query = 'SELECT id, nama, nis, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE 1=1';
+        let query = 'SELECT id, nama, nis, nisn, nip, username, role, kelas, grha, wali_kelas, ipt_total, ipt_awal, created_at, tahun_pelajaran, is_graduated, jurusan, detail, alamat, no_hp, jenis_kelamin, desil FROM users WHERE 1=1';
         let params = [];
 
         // Get filter values from query
@@ -433,7 +433,7 @@ router.get('/', auth, teacherOrSuperAdmin, async (req, res) => {
         }
 
         if (search) {
-            const tokenSearch = buildTokenSearchClause('nama', ['nis', 'nip', 'username'], search);
+            const tokenSearch = buildTokenSearchClause('nama', ['nis', 'nisn', 'nip', 'username'], search);
             query += ` AND ${tokenSearch.clause}`;
             params.push(...tokenSearch.params);
         }
@@ -761,7 +761,7 @@ router.get('/:id', auth, async (req, res) => {
         }
 
         const [users] = await db.query(
-            'SELECT id, nama, nis, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, jenis_kelamin, desil, tahun_pelajaran, jurusan, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
+            'SELECT id, nama, nis, nisn, nip, role, kelas, grha, wali_kelas, ipt_total, alamat, no_hp, jenis_kelamin, desil, tahun_pelajaran, jurusan, detail, detail AS jabatan, created_at FROM users WHERE id = ?',
             [requestedUserId]
         );
         
@@ -811,7 +811,14 @@ router.get('/:id', auth, async (req, res) => {
 // Create student account (Superadmin only other roles have no create access)
 router.post('/create-student', auth, superAdminOnly, async (req, res) => {
     try {
-        const { nama, nis, jurusan, password, wali_kelas, grha, tahun_pelajaran, jenis_kelamin, desil } = req.body;
+        const { nama, nis, nisn, jurusan, password, wali_kelas, grha, tahun_pelajaran, jenis_kelamin, desil } = req.body;
+
+        let nisnValue;
+        try {
+            nisnValue = normalizeNisn(nisn).value;
+        } catch (err) {
+            return res.status(err.statusCode || 400).json({ message: err.message });
+        }
 
         // Validate tahun_pelajaran format
         if (!tahun_pelajaran || !validateTahunPelajaran(tahun_pelajaran)) {
@@ -840,6 +847,12 @@ router.post('/create-student', auth, superAdminOnly, async (req, res) => {
         if (existing.length > 0) {
             return res.status(400).json({ message: 'NIS sudah terdaftar' });
         }
+        if (nisnValue !== null) {
+            const [existingNisn] = await db.query('SELECT id FROM users WHERE nisn = ?', [nisnValue]);
+            if (existingNisn.length > 0) {
+                return res.status(400).json({ message: 'NISN sudah terdaftar' });
+            }
+        }
 
         const hashedPassword = bcrypt.hashSync(password, 10);
 
@@ -849,8 +862,8 @@ router.post('/create-student', auth, superAdminOnly, async (req, res) => {
 
         const ipt_awal = await getIptAwalForGrade(gradePrefixFromKelas(calculatedClass));
         const [result] = await db.query(
-            'INSERT INTO users (nama, nis, username, password, role, kelas, wali_kelas, grha, jurusan, ipt_total, ipt_awal, tahun_pelajaran, jenis_kelamin, desil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nama, nis, username, hashedPassword, 'siswa', calculatedClass, wali_kelas, grha, jurusan, ipt_awal, ipt_awal, tahun_pelajaran, genderValue, desilValue]
+            'INSERT INTO users (nama, nis, nisn, username, password, role, kelas, wali_kelas, grha, jurusan, ipt_total, ipt_awal, tahun_pelajaran, jenis_kelamin, desil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nama, nis, nisnValue, username, hashedPassword, 'siswa', calculatedClass, wali_kelas, grha, jurusan, ipt_awal, ipt_awal, tahun_pelajaran, genderValue, desilValue]
         );
 
         // Create default permissions
@@ -874,6 +887,9 @@ router.post('/create-student', auth, superAdminOnly, async (req, res) => {
         res.status(201).json({ message: 'Akun siswa berhasil dibuat!', username });
     } catch (error) {
         console.error(error);
+        if (error.code === '23505' && error.constraint === 'users_nisn_unique') {
+            return res.status(400).json({ message: 'NISN sudah terdaftar' });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -953,7 +969,7 @@ router.put('/:id', auth, async (req, res) => {
             }
         }
 
-        const { nama, nis, nip, jurusan, tahun_pelajaran, alamat, no_hp, jabatan, detail, jenis_kelamin, desil } = req.body;
+        const { nama, nis, nisn, nip, jurusan, tahun_pelajaran, alamat, no_hp, jabatan, detail, jenis_kelamin, desil } = req.body;
 
         // Get current user data for logging (dan untuk validasi jabatan)
         const [targetUserData] = await db.query('SELECT nama, nis, role, detail, jurusan, tahun_pelajaran FROM users WHERE id = ?', [userId]);
@@ -971,7 +987,7 @@ router.put('/:id', auth, async (req, res) => {
                 siswa: new Set(['nama', 'no_hp', 'alamat']),
                 guru: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
                 pegawai: new Set(['nip', 'nama', 'jabatan', 'detail', 'no_hp', 'alamat']),
-                superadmin: new Set(['nama', 'nip', 'nis', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat', 'jabatan', 'detail'])
+                superadmin: new Set(['nama', 'nip', 'nis', 'nisn', 'jurusan', 'tahun_pelajaran', 'no_hp', 'alamat', 'jabatan', 'detail'])
             };
             const allowed = EDITABLE_FIELDS[targetUserData[0]?.role] || new Set();
             const forbidden = Object.keys(req.body || {}).filter((k) => !allowed.has(k));
@@ -988,6 +1004,23 @@ router.put('/:id', auth, async (req, res) => {
             const [dup] = await db.query('SELECT id FROM users WHERE nis = ? AND id <> ?', [nis, userId]);
             if (dup.length > 0) {
                 return res.status(400).json({ message: 'NIS sudah dipakai akun lain' });
+            }
+            let newNisn;
+            if (nisn !== undefined) {
+                if (targetUserData[0]?.role !== 'siswa') {
+                    return res.status(400).json({ message: 'NISN hanya berlaku untuk akun siswa' });
+                }
+                try {
+                    newNisn = normalizeNisn(nisn).value;
+                } catch (err) {
+                    return res.status(err.statusCode || 400).json({ message: err.message });
+                }
+                if (newNisn !== null) {
+                    const [dup] = await db.query('SELECT id FROM users WHERE nisn = ? AND id <> ?', [newNisn, userId]);
+                    if (dup.length > 0) {
+                        return res.status(400).json({ message: 'NISN sudah dipakai siswa lain' });
+                    }
+                }
             }
         }
         if (newNip !== undefined) {
@@ -1060,6 +1093,10 @@ router.put('/:id', auth, async (req, res) => {
             setClauses.push('nis = ?');
             setParams.push(nis);
         }
+        if (nisn !== undefined) {
+            setClauses.push('nisn = ?');
+            setParams.push(newNisn);
+        }
         if (nip !== undefined) {
             setClauses.push('nip = ?');
             setParams.push(newNip);
@@ -1125,6 +1162,9 @@ router.put('/:id', auth, async (req, res) => {
         res.json({ message: 'User updated successfully' });
     } catch (error) {
         console.error(error);
+        if (error.code === '23505' && error.constraint === 'users_nisn_unique') {
+            return res.status(400).json({ message: 'NISN sudah dipakai siswa lain' });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -1290,11 +1330,11 @@ router.put('/:id/ipt', auth, superAdminOnly, async (req, res) => {
 router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
     try {
         const userId = parseInt(req.params.id);
-        const { nama, nis, jurusan, grha, tahun_pelajaran, nip, jabatan, detail, alamat, no_hp, jenis_kelamin, desil } = req.body;
+        const { nama, nis, nisn, jurusan, grha, tahun_pelajaran, nip, jabatan, detail, alamat, no_hp, jenis_kelamin, desil } = req.body;
         const teacherJabatan = jabatan || detail;
 
         // Get user current data
-        const [user] = await db.query('SELECT nama, role, detail, nis, nip, alamat, no_hp, jenis_kelamin, desil FROM users WHERE id = ?', [userId]);
+        const [user] = await db.query('SELECT nama, role, detail, nis, nisn, nip, alamat, no_hp, jenis_kelamin, desil FROM users WHERE id = ?', [userId]);
         if (user.length === 0) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -1310,8 +1350,26 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
         if (req.user.role !== 'superadmin' && role !== 'siswa') {
             return res.status(403).json({ message: 'Hanya biodata siswa yang dapat diubah' });
         }
+        if (nisn !== undefined && role !== 'siswa') {
+            return res.status(400).json({ message: 'NISN hanya berlaku untuk akun siswa' });
+        }
 
         if (role === 'siswa') {
+            let newNisn = user[0].nisn || null;
+            if (nisn !== undefined) {
+                try {
+                    newNisn = normalizeNisn(nisn).value;
+                } catch (err) {
+                    return res.status(err.statusCode || 400).json({ message: err.message });
+                }
+                if (newNisn !== null) {
+                    const [dup] = await db.query('SELECT id FROM users WHERE nisn = ? AND id <> ?', [newNisn, userId]);
+                    if (dup.length > 0) {
+                        return res.status(400).json({ message: 'NISN sudah dipakai siswa lain' });
+                    }
+                }
+            }
+
             // Validate tahun_pelajaran format if provided
             if (tahun_pelajaran && !validateTahunPelajaran(tahun_pelajaran)) {
                 return res.status(400).json({ message: 'Tahun pelajaran tidak valid. Format harus YYYY-YYYY (contoh: 2024-2025)' });
@@ -1351,8 +1409,8 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
 
             // Update siswa biodata
             await db.query(
-                'UPDATE users SET nama = ?, nis = ?, jurusan = ?, grha = ?, tahun_pelajaran = ?, kelas = ?, jenis_kelamin = ?, desil = ? WHERE id = ?',
-                [nama, nis, jurusan, grha, tahun_pelajaran, calculatedClass, newGender, newDesil, userId]
+                'UPDATE users SET nama = ?, nis = ?, nisn = ?, jurusan = ?, grha = ?, tahun_pelajaran = ?, kelas = ?, jenis_kelamin = ?, desil = ? WHERE id = ?',
+                [nama, nis, newNisn, jurusan, grha, tahun_pelajaran, calculatedClass, newGender, newDesil, userId]
             );
 
             // Propagate the edited biodata into record snapshots, logs, notifications.
@@ -1403,6 +1461,9 @@ router.put('/:id/biodata', auth, teacherOrSuperAdmin, async (req, res) => {
         res.json({ message: 'Biodata updated successfully' });
     } catch (error) {
         console.error(error);
+        if (error.code === '23505' && error.constraint === 'users_nisn_unique') {
+            return res.status(400).json({ message: 'NISN sudah dipakai siswa lain' });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 });

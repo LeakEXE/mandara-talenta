@@ -3,6 +3,19 @@
 // rules cannot drift. Empty/undefined means "leave unchanged" for updates
 // and NULL for creates — use { value, present } results.
 
+function normalizeNisn(raw) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') {
+        return { present: false, value: null };
+    }
+    const value = String(raw).trim();
+    if (!/^\d{10}$/.test(value)) {
+        const err = new Error('NISN harus terdiri dari tepat 10 angka.');
+        err.statusCode = 400;
+        throw err;
+    }
+    return { present: true, value };
+}
+
 function normalizeGender(raw) {
     if (raw === undefined || raw === null || String(raw).trim() === '') {
         return { present: false, value: null };
@@ -45,4 +58,4 @@ const DESIL_LABELS = {
     10: 'Sangat kaya',
 };
 
-module.exports = { normalizeGender, normalizeDesil, DESIL_LABELS };
+module.exports = { normalizeNisn, normalizeGender, normalizeDesil, DESIL_LABELS };

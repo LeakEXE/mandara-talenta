@@ -22,6 +22,7 @@ const EXPORT_COLUMNS = [
   { key: 'role', header: 'Role', width: 12 },
   { key: 'detail', header: 'Jabatan', width: 12 },
   { key: 'nis', header: 'NIS', width: 12 },
+  { key: 'nisn', header: 'NISN', width: 14 },
   { key: 'nip', header: 'NIP', width: 18 },
   { key: 'kelas', header: 'Kelas', width: 12 },
   { key: 'jurusan', header: 'Jurusan', width: 10 },
@@ -40,7 +41,7 @@ const EXPORT_COLUMNS = [
 ];
 
 // Columns that must stay Text format so Excel keeps leading zeros (e.g. 08123).
-const EXPORT_TEXT_FORMAT_KEYS = new Set(['nis', 'nip', 'no_hp']);
+const EXPORT_TEXT_FORMAT_KEYS = new Set(['nis', 'nisn', 'nip', 'no_hp']);
 
 const KELAS_OPTIONS = [
   'X TKJ 1', 'X TKJ 2', 'X TKR 1', 'X TKR 2',
@@ -395,6 +396,7 @@ function KelolaAkun() {
       setFormData({
         nama: user.nama,
         nis: user.nis,
+        nisn: user.nisn || '',
         username: user.username || '',
         jurusan: user.jurusan,
         grha: user.grha,
@@ -564,6 +566,7 @@ function KelolaAkun() {
             const studentData = {
               nama: nama,
               nis: getRowField(row, 'nis', 'NIS'),
+              nisn: getRowField(row, 'nisn', 'NISN'),
               jurusan,
               grha: normalizeGrha(getRowField(row, 'grha', 'Grha', 'Gra', 'GRHA')) || 'Airsanya',
               tahun_pelajaran: tahunPelajaran,
@@ -695,7 +698,7 @@ function KelolaAkun() {
         worksheet.addRow(rowData);
       });
 
-      // Force Text format on NIS/NIP/No HP data cells so leading zeros survive.
+      // Force Text format on identifiers and phone numbers so leading zeros survive.
       activeCols.forEach((c, colIndex) => {
         if (!EXPORT_TEXT_FORMAT_KEYS.has(c.key)) return;
         const colNumber = colIndex + 1;
@@ -745,6 +748,7 @@ function KelolaAkun() {
         { header: 'No', key: 'No', width: 6 },
         { header: 'Nama', key: 'Nama', width: 25 },
         { header: 'NIS', key: 'NIS', width: 10 },
+        { header: 'NISN', key: 'NISN', width: 12, style: { numFmt: '@' } },
         { header: 'Jurusan', key: 'Jurusan', width: 10 },
         { header: 'Grha', key: 'Grha', width: 12 },
         { header: 'TahunPelajaran', key: 'TahunPelajaran', width: 15 },
@@ -987,7 +991,7 @@ function KelolaAkun() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari nama, NIS, atau NIP..."
+                placeholder="Cari nama, NIS, NISN, atau NIP..."
                 style={{
                   width: '100%', padding: '8px 12px', border: '1px solid #d0d0d0', borderRadius: '4px',
                   fontSize: '13px', background: 'white', color: '#333', transition: 'all 0.3s ease'
@@ -1204,7 +1208,7 @@ function KelolaAkun() {
               <tr>
                 {userRole === 'superadmin' && <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '30px' }}></th>}
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0' }}>Nama</th>
-                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '90px' }}>NIS/NIP</th>
+                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '140px' }}>NIS / NISN / NIP</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '110px' }}>Username</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '80px' }}>Role</th>
                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: '#333', borderRight: '1px solid #e0e0e0', width: '100px' }}>Kelas</th>
@@ -1246,7 +1250,12 @@ function KelolaAkun() {
                     </td>
                   )}
                   <td style={{ padding: '10px 12px', color: '#333', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{user.nama}</td>
-                  <td style={{ padding: '10px 12px', color: '#333', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>{user.nis || user.nip || '-'}</td>
+                  <td style={{ padding: '10px 12px', color: '#333', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
+                    {user.nis && <div>NIS: {user.nis}</div>}
+                    {user.nisn && <div>NISN: {user.nisn}</div>}
+                    {user.nip && <div>NIP: {user.nip}</div>}
+                    {!user.nis && !user.nisn && !user.nip && '-'}
+                  </td>
                   <td style={{ padding: '10px 12px', color: '#333', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0', fontWeight: '600' }}>{user.username || '-'}</td>
                   <td style={{ padding: '10px 12px', borderRight: '1px solid #e0e0e0', borderBottom: '1px solid #e0e0e0' }}>
                     <span style={{ 
@@ -1502,6 +1511,19 @@ function KelolaAkun() {
                   <input type="text" value={formData.nis || ''} onChange={(e) => setFormData({...formData, nis: e.target.value})} required />
                 </div>
                 <div className="form-group">
+                  <label>NISN (opsional)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    title="NISN harus terdiri dari tepat 10 angka"
+                    value={formData.nisn || ''}
+                    onChange={(e) => setFormData({...formData, nisn: e.target.value})}
+                    placeholder="10 angka"
+                  />
+                </div>
+                <div className="form-group">
                   <label>Kelas</label>
                   <select value={formData.jurusan || ''} onChange={(e) => setFormData({...formData, jurusan: e.target.value})} required>
                     <option value="" disabled hidden>Pilih Kelas</option>
@@ -1715,7 +1737,7 @@ function KelolaAkun() {
               <div style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
                 {importModalType === 'siswa' ? (
                   <div>
-                    <strong>Format Siswa:</strong> nama, nis, jurusan, grha, tahun_pelajaran, password
+                    <strong>Format Siswa:</strong> nama, nis, nisn (opsional), jurusan, grha, tahun_pelajaran, password
                     <br />
                     <small style={{ color: '#1976d2', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                       <Lightbulb size={14} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -1877,6 +1899,19 @@ function KelolaAkun() {
                   <div className="form-group">
                     <label>NIS</label>
                     <input type="text" value={formData.nis || ''} onChange={(e) => setFormData({...formData, nis: e.target.value})} required />
+                  </div>
+                  <div className="form-group">
+                    <label>NISN (opsional)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      title="NISN harus terdiri dari tepat 10 angka"
+                      value={formData.nisn || ''}
+                      onChange={(e) => setFormData({...formData, nisn: e.target.value})}
+                      placeholder="10 angka"
+                    />
                   </div>
                   <div className="form-group">
                   </div>
