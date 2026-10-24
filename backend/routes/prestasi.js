@@ -82,41 +82,44 @@ router.get('/all', auth, async (req, res) => {
         }
 
         const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+        const recordKeySql = `CASE
+            WHEN p.kategori_lomba = 'kelompok' AND p.grup_lomba IS NOT NULL
+                THEN 'group:' || p.grup_lomba
+            ELSE 'record:' || p.id::text
+        END`;
 
-        // Count distinct records: individual prestasi = 1 per row, group prestasi = 1 per grup_lomba
+        // Count logical records so pagination counts a group once, not once per student.
         const countQuery = `
-            SELECT COUNT(DISTINCT grp) as total FROM (
-                SELECT CASE 
-                    WHEN p.kategori_lomba = 'kelompok' THEN p.grup_lomba 
-                    ELSE p.id::text 
-                END as grp
+            SELECT COUNT(*) as total FROM (
+                SELECT ${recordKeySql} as record_key
                 FROM prestasi p
                 ${whereSql}
+                GROUP BY record_key
             ) t
         `;
         const [countRows] = await db.query(countQuery, params);
         const total = countRows[0].total;
 
-        // For pagination: fetch one row per group (kelompok) or per row (individu)
-        // Use ROW_NUMBER to pick the first student of each group
+        // Select a page of logical records first, then return all member rows
+        // for each selected group so the index can display the complete roster.
         const dataQuery = `
-            SELECT p.*, u.nama as user_name 
-            FROM (
-                SELECT p.*, 
-                    ROW_NUMBER() OVER (
-                        PARTITION BY CASE 
-                            WHEN p.kategori_lomba = 'kelompok' THEN p.grup_lomba 
-                            ELSE p.id::text 
-                        END
-                        ORDER BY p.created_at DESC
-                    ) as rn
+            WITH filtered_records AS (
+                SELECT ${recordKeySql} as record_key, p.created_at
                 FROM prestasi p
                 ${whereSql}
-            ) p
+            ),
+            page_records AS (
+                SELECT record_key, MAX(created_at) as record_created_at
+                FROM filtered_records
+                GROUP BY record_key
+                ORDER BY record_created_at DESC, record_key
+                LIMIT ? OFFSET ?
+            )
+            SELECT p.*, u.nama as user_name
+            FROM page_records page
+            JOIN prestasi p ON ${recordKeySql} = page.record_key
             JOIN users u ON p.user_id = u.id
-            WHERE p.rn = 1
-            ORDER BY p.created_at DESC
-            LIMIT ? OFFSET ?
+            ORDER BY page.record_created_at DESC, p.created_at DESC, p.id DESC
         `;
         const [prestasi] = await db.query(dataQuery, [...params, limit, offset]);
 
