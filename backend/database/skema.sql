@@ -492,6 +492,22 @@ CREATE TABLE kepanitiaan_approvals (
 CREATE TRIGGER trg_kepanitiaan_approvals_updated BEFORE UPDATE ON kepanitiaan_approvals
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- Multi-file evidence (bukti) for every record and approval table.
+-- `foto` remains the first/legacy file; this table stores the complete set.
+DROP TABLE IF EXISTS record_evidence CASCADE;
+CREATE TABLE record_evidence (
+    id SERIAL PRIMARY KEY,
+    record_type VARCHAR(32) NOT NULL,
+    record_id INTEGER NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_record_evidence_record
+    ON record_evidence(record_type, record_id);
+CREATE UNIQUE INDEX idx_record_evidence_unique
+    ON record_evidence(record_type, record_id, file_path);
+
 -- Siswa Approvals Table (for new student accounts created by guru)
 DROP TABLE IF EXISTS siswa_approvals CASCADE;
 CREATE TABLE siswa_approvals (

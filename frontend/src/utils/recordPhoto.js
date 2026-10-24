@@ -2,6 +2,7 @@ const UPLOAD_FOLDERS = {
     prestasi: 'prestasi',
     event: 'event',
     organisasi: 'organisasi',
+    kepanitiaan: 'kepanitiaan',
     pelanggaran: 'pelanggaran'
 };
 

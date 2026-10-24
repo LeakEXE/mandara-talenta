@@ -1,6 +1,7 @@
 // Client-side mirror of backend/utils/evidenceUpload.js policy.
-// Keep both in sync: images + PDF, 10MB max.
+// Keep both in sync: images + PDF, five files max, 10MB per file.
 export const EVIDENCE_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+export const EVIDENCE_MAX_FILES = 5;
 
 const EVIDENCE_MIMETYPES = [
     'image/jpeg',
@@ -23,4 +24,24 @@ export function validateEvidenceFile(file) {
         return 'Ukuran file maksimal 10MB.';
     }
     return null;
+}
+
+export function validateEvidenceFiles(files, existingCount = 0) {
+    const list = Array.from(files || []);
+    if (existingCount + list.length > EVIDENCE_MAX_FILES) {
+        return `Maksimal ${EVIDENCE_MAX_FILES} file bukti per data.`;
+    }
+    for (const file of list) {
+        const error = validateEvidenceFile(file);
+        if (error) return error;
+    }
+    return null;
+}
+
+export function evidenceItemsForRecord(record) {
+    if (Array.isArray(record?.evidence) && record.evidence.length > 0) {
+        return record.evidence;
+    }
+    const legacyPath = record?.foto || record?.foto_path;
+    return legacyPath ? [{ id: null, path: legacyPath }] : [];
 }

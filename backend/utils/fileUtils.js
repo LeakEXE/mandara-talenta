@@ -153,6 +153,7 @@ const deletePhotoFile = (filePath) => {    if (!filePath) {
 /**
  * Every table/column that can reference an evidence file, avatar, or logo.
  * Used both to avoid deleting live files and to flag orphans in file-manager.
+ * Multi-file evidence is stored separately in record_evidence (see below).
  * (perilaku has no file column; siswa_approvals/biodata/password tables hold no files.)
  */
 const FOTO_REFERENCES = [
@@ -212,6 +213,36 @@ async function collectFotoReferences(db, exclude = null) {
             base.add(n.split('/').pop());
         }
     }
+
+    // Multi-file evidence lives in a polymorphic table. Keep it in the same
+    // reference sets so deleting one file never strands a group sibling.
+    try {
+        let rows;
+        if (exclude && exclude.table && exclude.id !== undefined && exclude.id !== null) {
+            [rows] = await db.query(
+                `SELECT file_path AS v
+                 FROM record_evidence
+                 WHERE file_path IS NOT NULL AND file_path <> ''
+                   AND NOT (record_type = ? AND record_id = ?)`,
+                [exclude.table, exclude.id]
+            );
+        } else {
+            [rows] = await db.query(
+                `SELECT file_path AS v
+                 FROM record_evidence
+                 WHERE file_path IS NOT NULL AND file_path <> ''`
+            );
+        }
+        for (const r of rows || []) {
+            const n = normalizeFotoValue(r.v);
+            if (!n) continue;
+            full.add(n);
+            base.add(n.split('/').pop());
+        }
+    } catch {
+        // Older schema without record_evidence: keep the legacy behavior.
+    }
+
     return { full, base };
 }
 

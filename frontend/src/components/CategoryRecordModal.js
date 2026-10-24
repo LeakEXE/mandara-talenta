@@ -7,6 +7,7 @@ import { formatDisplayText, formatTanggalLomba } from '../utils/formatDisplayTex
 import { EvidenceViewer, isPdfPath } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
 import { User, FileText, Paperclip } from 'lucide-react';
+import { evidenceItemsForRecord } from '../utils/evidence';
 
 const CATEGORY_LABELS = {
   prestasi: 'Prestasi',
@@ -184,28 +185,35 @@ function CategoryRecordModal({ student, category, totalPoint, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '60vh', overflowY: 'auto' }}>
               {items.map((item) => {
                 const d = describeRecord(item, category);
-                const fotoUrl = d.foto ? getRecordPhotoUrl(d.foto, category) : null;
+                const evidenceItems = evidenceItemsForRecord(item);
                 return (
                   <div key={item.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    {fotoUrl && (
-                      isPdfPath(d.foto) ? (
-                        <div
-                          onClick={() => setEvidenceImage(d.foto)}
-                          title="Klik untuk melihat PDF"
-                          style={{ width: 64, height: 64, borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: '#dc2626' }}
-                        >
-                          <FileText size={24} />
-                          <span style={{ fontSize: '9px', fontWeight: 700 }}>PDF</span>
-                        </div>
-                      ) : (
-                        <img
-                          src={fotoUrl}
-                          alt="Bukti"
-                          onClick={() => setEvidenceImage(d.foto)}
-                          title="Klik untuk memperbesar"
-                          style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0' }}
-                        />
-                      )
+                    {evidenceItems.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0, maxWidth: 144 }}>
+                        {evidenceItems.map((evidence) => {
+                          const evidenceUrl = getRecordPhotoUrl(evidence.path, category);
+                          return isPdfPath(evidence.path) ? (
+                            <div
+                              key={evidence.id || evidence.path}
+                              onClick={() => setEvidenceImage(evidence.path)}
+                              title="Klik untuk melihat PDF"
+                              style={{ width: 64, height: 64, borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px', color: '#dc2626' }}
+                            >
+                              <FileText size={24} />
+                              <span style={{ fontSize: '9px', fontWeight: 700 }}>PDF</span>
+                            </div>
+                          ) : (
+                            <img
+                              key={evidence.id || evidence.path}
+                              src={getImageUrl(evidenceUrl)}
+                              alt="Bukti"
+                              onClick={() => setEvidenceImage(evidence.path)}
+                              title="Klik untuk memperbesar"
+                              style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', flexShrink: 0, border: '1px solid #e2e8f0' }}
+                            />
+                          );
+                        })}
+                      </div>
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '2px' }}>
@@ -218,8 +226,8 @@ function CategoryRecordModal({ student, category, totalPoint, onClose }) {
                           <Field key={fl} label={fl} value={fv} />
                         ))}
                       </div>
-                      {fotoUrl && (
-                        <span onClick={() => setEvidenceImage(d.foto)} style={{ color: '#2563eb', fontSize: '.75rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: '6px' }}><Paperclip size={12} /> Lihat Bukti</span>
+                      {evidenceItems.length > 0 && (
+                        <span onClick={() => setEvidenceImage(evidenceItems[0].path)} style={{ color: '#2563eb', fontSize: '.75rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: '6px' }}><Paperclip size={12} /> Lihat {evidenceItems.length} bukti</span>
                       )}
                     </div>
                   </div>

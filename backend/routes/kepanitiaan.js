@@ -3,11 +3,23 @@ const router = express.Router();
 const { auth, superAdminOnly } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan, replaceEvidenceFile } = require('../utils/fileUtils');
-const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const {
+    uploadedPaths,
+    attachEvidence,
+    listEvidence,
+    replaceEvidence,
+    updateEvidenceSelection,
+    parseEvidenceIdList,
+    validateEvidenceSelection,
+    withEvidenceUploadCleanup,
+    deleteEvidenceForRecord,
+    moveEvidenceToApproved,
+    deleteEvidenceFilesIfOrphan
+} = require('../utils/evidenceStore');
+const { ensureUploadSubdir } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
@@ -16,7 +28,7 @@ const storage = multer.diskStorage({
         cb(null, ensureUploadSubdir('kepanitiaan'));
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
     }
 });
 
@@ -70,6 +82,7 @@ router.get('/all', auth, async (req, res) => {
             LIMIT ? OFFSET ?
         `, [...params, limit, offset]);
 
+        await attachEvidence(kepanitiaan, 'kepanitiaan');
         res.json({
             data: kepanitiaan,
             pagination: {
@@ -92,6 +105,7 @@ router.get('/user/:userId', auth, async (req, res) => {
             'SELECT * FROM kepanitiaan WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
             [req.params.userId, 'approved']
         );
+        await attachEvidence(kepanitiaan, 'kepanitiaan');
         res.json(kepanitiaan);
     } catch (error) {
         console.error(error);
@@ -100,29 +114,18 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // Create kepanitiaan
-router.post('/', auth, upload.single('foto'), async (req, res) => {
+router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'kepanitiaan'), async (req, res) => {
     try {
         const { nama, nis, kelas, grha, jabatan_kepanitiaan, kategori_kepanitiaan } = req.body;
-        let foto = req.file ? req.file.filename : null;
-
-        // Rename file to NIS_Jabatan Kepanitiaan format
-        if (req.file && foto) {
-            const oldPath = resolveUploadPath(path.join('uploads/kepanitiaan', foto));
-            const ext = path.extname(req.file.originalname);
-            const newFileName = `${nis}_${jabatan_kepanitiaan}${ext}`;
-            const newPath = resolveUploadPath(path.join('uploads/kepanitiaan', newFileName));
-
-            // Rename the file
-            fs.renameSync(oldPath, newPath);
-            foto = newFileName;
-        }
+        const fotoPaths = uploadedPaths(req, 'kepanitiaan');
 
         const point = await calculateKepanitiaanPoints(jabatan_kepanitiaan);
 
         const [result] = await db.query(
             'INSERT INTO kepanitiaan (user_id, nama, nis, kelas, grha, jabatan_kepanitiaan, foto, kategori_kepanitiaan, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.user.id, nama, nis, kelas, grha, jabatan_kepanitiaan, foto, kategori_kepanitiaan, point]
+            [req.user.id, nama, nis, kelas, grha, jabatan_kepanitiaan, fotoPaths[0] || null, kategori_kepanitiaan, point]
         );
+        await replaceEvidence('kepanitiaan', result.insertId, fotoPaths);
 
         // Log activity
         await db.query(
@@ -155,23 +158,18 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         const kepanitiaanData = kepanitiaan[0];
-        let newFotoPath = kepanitiaanData.foto;
-
-        // Move photo to approved folder if it exists
-        if (kepanitiaanData.foto) {
-            const movedPath = movePhotoToApprovedFolder(path.join('uploads/kepanitiaan', kepanitiaanData.foto), 'kepanitiaan');
-            if (movedPath) {
-                newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-            }
-        }
+        const sourceEvidence = await listEvidence('kepanitiaan', kepanitiaanId, conn.query);
+        const movedEvidence = moveEvidenceToApproved(sourceEvidence.map((item) => item.path), 'kepanitiaan');
+        const finalEvidence = sourceEvidence.map((item) => movedEvidence.get(item.path) || item.path);
 
         // Conditional update closes the race between the SELECT above and
         // this write (two admins approving at once): only one wins.
-        const [updated] = await conn.query('UPDATE kepanitiaan SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, kepanitiaanId, 'pending']);
+        const [updated] = await conn.query('UPDATE kepanitiaan SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', finalEvidence[0] || null, kepanitiaanId, 'pending']);
         if (updated.affectedRows === 0) {
             await conn.rollback();
             return res.status(400).json({ message: 'Kepanitiaan ini sudah diproses' });
         }
+        await replaceEvidence('kepanitiaan', kepanitiaanId, finalEvidence, conn.query);
 
         // Recompute the total from approved records (same formula as
         // syncIpt.js) never arithmetic, so double-approvals and drift
@@ -215,6 +213,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
             return res.status(404).json({ message: 'Kepanitiaan not found' });
         }
         const wasApproved = rows[0].status === 'approved';
+        let rejectedEvidence = [];
 
         // Serialize concurrent mutations of this student, then reject.
         if (wasApproved) {
@@ -222,6 +221,8 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         }
 
         await conn.query('UPDATE kepanitiaan SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, kepanitiaanId]);
+        rejectedEvidence = (await listEvidence('kepanitiaan', kepanitiaanId, conn.query)).map((item) => item.path);
+        await deleteEvidenceForRecord('kepanitiaan', kepanitiaanId, conn.query);
 
         // A rejected record stops counting: recompute WITHOUT a tombstone
         // row ('*_reject' is not in the ipt_history CHECK list), then remove
@@ -243,10 +244,11 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        if (rows[0]?.foto) {
-            await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'kepanitiaan', id: kepanitiaanId }, folderHint: 'kepanitiaan' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(rejectedEvidence, {
+            exclude: { table: 'kepanitiaan', id: kepanitiaanId },
+            folderHint: 'kepanitiaan'
+        });
 
         res.json({ message: 'Kepanitiaan rejected' });
     } catch (error) {
@@ -259,7 +261,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 });
 
 // Update kepanitiaan
-router.put('/:id', auth, upload.single('foto'), async (req, res) => {
+router.put('/:id', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'kepanitiaan'), async (req, res) => {
     try {
         const kepanitiaanId = req.params.id;
         const { nama, nis, kelas, grha, jabatan_kepanitiaan, kategori_kepanitiaan } = req.body;
@@ -270,20 +272,13 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         }
 
         const kepanitiaanData = kepanitiaan[0];
-        let foto = kepanitiaanData.foto;
-
-        // Swap evidence for the new upload (keeps the timestamp-unique
-        // multer name; approved rows land in approved/).
-        if (req.file) {
-            const next = await replaceEvidenceFile(db, {
-                oldFoto: foto,
-                uploadedFilename: req.file.filename,
-                recordType: 'kepanitiaan',
-                approved: kepanitiaanData.status === 'approved',
-                exclude: { table: 'kepanitiaan', id: kepanitiaanId }
-            });
-            if (next) foto = next;
-        }
+        const uploaded = uploadedPaths(req, 'kepanitiaan');
+        const removeIds = parseEvidenceIdList(req.body.remove_evidence_ids);
+        await validateEvidenceSelection('kepanitiaan', kepanitiaanId, removeIds, uploaded.length);
+        const moved = kepanitiaanData.status === 'approved'
+            ? moveEvidenceToApproved(uploaded, 'kepanitiaan')
+            : new Map();
+        const newEvidence = uploaded.map((p) => moved.get(p) || p);
 
         // Recalculate points if jabatan_kepanitiaan changed
         const point = await calculateKepanitiaanPoints(jabatan_kepanitiaan);
@@ -291,6 +286,18 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
+
+            let finalEvidence = null;
+            let removedEvidence = [];
+            if (newEvidence.length > 0 || removeIds.length > 0) {
+                const result = await updateEvidenceSelection('kepanitiaan', kepanitiaanId, {
+                    removeIds,
+                    newPaths: newEvidence
+                }, conn.query);
+                finalEvidence = result.finalPaths;
+                removedEvidence = result.removedPaths;
+            }
+            const foto = finalEvidence ? (finalEvidence[0] || null) : kepanitiaanData.foto;
 
             const [upd] = await conn.query(
                 'UPDATE kepanitiaan SET nama = ?, nis = ?, kelas = ?, grha = ?, jabatan_kepanitiaan = ?, kategori_kepanitiaan = ?, foto = ?, point = ? WHERE id = ?',
@@ -321,6 +328,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             );
 
             await conn.commit();
+            await deleteEvidenceFilesIfOrphan(removedEvidence, { folderHint: 'kepanitiaan' });
         } catch (error) {
             try { await conn.rollback(); } catch (_) {}
             throw error;
@@ -331,7 +339,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         res.json({ message: 'Kepanitiaan updated successfully' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ message: status >= 500 ? 'Server error' : error.message });
     }
 });
 
@@ -355,7 +364,9 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         if (wasApproved) {
             await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [kepanitiaanData.user_id]);
         }
+        const evidencePaths = (await listEvidence('kepanitiaan', kepanitiaanId, conn.query)).map((item) => item.path);
         await conn.query('DELETE FROM kepanitiaan WHERE id = ?', [kepanitiaanId]);
+        await deleteEvidenceForRecord('kepanitiaan', kepanitiaanId, conn.query);
 
         // Approved records contributed to the total: recompute it from the
         // remaining approved records (same formula as syncIpt.js) this
@@ -381,11 +392,8 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        // (kelompok siblings may share one file never strand them).
-        if (kepanitiaanData.foto) {
-            await deletePhotoIfOrphan(db, kepanitiaanData.foto, { folderHint: 'kepanitiaan' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(evidencePaths, { folderHint: 'kepanitiaan' });
 
         res.json({ message: 'Kepanitiaan deleted successfully' });
     } catch (error) {

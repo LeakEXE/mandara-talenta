@@ -4,10 +4,9 @@ import StudentSelect from './StudentSelect';
 import FilterBar from './FilterBar';
 import EditModal from './EditModal';
 import useEditModal from '../hooks/useEditModal';
-import API_BASE_URL from '../config';
 import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
-import { validateEvidenceFile } from '../utils/evidence';
+import EvidenceFilesField from './EvidenceFilesField';
 
 function InputKepanitiaan() {
   const [formData, setFormData] = useState({
@@ -18,7 +17,7 @@ function InputKepanitiaan() {
     jabatan_kepanitiaan: '',
     kategori_kepanitiaan: ''
   });
-  const [foto, setFoto] = useState(null);
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [submissions, setSubmissions] = useState([]);
@@ -270,22 +269,6 @@ function InputKepanitiaan() {
     }
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) {
-      setFoto(null);
-      return;
-    }
-    const err = validateEvidenceFile(file);
-    if (err) {
-      setMessage(err);
-      setFoto(null);
-      e.target.value = '';
-      return;
-    }
-    setFoto(file);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
@@ -296,13 +279,7 @@ function InputKepanitiaan() {
       Object.keys(formData).forEach(key => {
         data.append(key, formData[key]);
       });
-      if (foto) {
-        // Prepend NIS to filename if NIS exists
-        const fileToUpload = formData.nis
-          ? new File([foto], `${formData.nis}_${foto.name}`, { type: foto.type })
-          : foto;
-        data.append('foto', fileToUpload);
-      }
+      evidenceFiles.forEach((file) => data.append('foto', file));
 
       const response = await api.post('/approvals/kepanitiaan/submit', data);
 
@@ -319,7 +296,7 @@ function InputKepanitiaan() {
         jabatan_kepanitiaan: '',
         kategori_kepanitiaan: ''
       });
-      setFoto(null);
+      setEvidenceFiles([]);
       setIsAutoFilled(false);
       setShowForm(false);
       fetchUserSubmissions(); // Refresh submissions list
@@ -432,37 +409,17 @@ function InputKepanitiaan() {
     fetchAllKepanitiaan();
   };
 
-  const handleEditFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) {
-      editModal.setEditFoto(null);
-      return;
-    }
-    const err = validateEvidenceFile(file);
-    if (err) {
-      setMessage(err);
-      editModal.setEditFoto(null);
-      e.target.value = '';
-      return;
-    }
-    editModal.setEditFoto(file);
-  };
-
   const handleUpdate = async () => {
     editModal.setIsLoading(true);
     try {
       const data = new FormData();
       Object.keys(editModal.editFormData).forEach(key => {
-        if (key !== 'id' && key !== 'created_at' && key !== 'status' && key !== 'user_id') {
+        if (!['id', 'created_at', 'status', 'user_id', 'foto', 'foto_path', 'evidence'].includes(key)) {
           data.append(key, editModal.editFormData[key]);
         }
       });
-      if (editModal.editFoto) {
-        const fileToUpload = editModal.editFormData.nis
-          ? new File([editModal.editFoto], `${editModal.editFormData.nis}_${editModal.editFoto.name}`, { type: editModal.editFoto.type })
-          : editModal.editFoto;
-        data.append('foto', fileToUpload);
-      }
+      editModal.editFoto.forEach((file) => data.append('foto', file));
+      data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
       await api.put(`/kepanitiaan/${editModal.editingItem.id}`, data);
 
@@ -855,8 +812,7 @@ function InputKepanitiaan() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
-          <input type="file" onChange={handleFileChange} accept="image/*,.pdf" />
+          <EvidenceFilesField type="kepanitiaan" files={evidenceFiles} onFilesChange={setEvidenceFiles} />
         </div>
         <button type="submit" className="btn btn-primary" disabled={loading}>
           {loading ? 'Mengirim...' : (userRole === 'superadmin' ? 'Kirim' : 'Ajukan untuk Persetujuan')}
@@ -870,7 +826,6 @@ function InputKepanitiaan() {
         onClose={editModal.closeEditModal}
         onSave={handleUpdate}
         isLoading={editModal.isLoading}
-        photoPreview={editModal.editingItem?.foto ? `${API_BASE_URL.replace('/api', '')}/${editModal.editingItem.foto}` : null}
       >
         <div className="form-group">
           <label>Nama</label>
@@ -942,11 +897,14 @@ function InputKepanitiaan() {
         </div>
 
         <div className="form-group">
-          <label>Foto/Dokumen Bukti {editModal.editingItem?.foto && '(Pilih untuk ganti)'} (JPG, PNG, GIF, WebP, PDF - maks 10MB)</label>
-          <input
-            type="file"
-            onChange={handleEditFileChange}
-            accept="image/*,.pdf"
+          <EvidenceFilesField
+            type="kepanitiaan"
+            files={editModal.editFoto}
+            onFilesChange={editModal.setEditFoto}
+            existingRecord={editModal.editingItem}
+            removedIds={editModal.removedEvidenceIds}
+            onRemovedIdsChange={editModal.setRemovedEvidenceIds}
+            disabled={editModal.isLoading}
           />
         </div>
       </EditModal>

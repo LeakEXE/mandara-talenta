@@ -405,6 +405,13 @@ mandara-talenta/
 ### Upload File Error
 - Pastikan folder `uploads` ada di backend
 - Pastikan permission folder sudah benar
+- Setiap bukti mendukung maksimal 5 file, masing-masing maksimal 10 MB (JPG, PNG, GIF, WebP, atau PDF).
+
+### Database Bukti Multi-File
+- Instalasi baru mendapatkan tabel `record_evidence` dari `backend/database/skema.sql`.
+- Pada database yang sudah ada, jalankan migrasi satu kali dari folder `backend`:
+  `node scripts/runMigration.js database/migrate_evidence_files.sql`
+- Migrasi tersebut membuat tabel bukti dan menyalin path foto lama agar dapat tetap ditampilkan serta dikelola sebagai bukti.
 
 ## Catatan Penting
 
