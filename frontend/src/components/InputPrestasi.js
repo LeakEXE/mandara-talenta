@@ -39,6 +39,8 @@ function InputPrestasi() {
   const [accessMessage, setAccessMessage] = useState('');
   const [, setIsAutoFilled] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [editingPendingSubmission, setEditingPendingSubmission] = useState(false);
   const [allPrestasi, setAllPrestasi] = useState([]);
   const [loadingIndex, setLoadingIndex] = useState(false);
   const [indexSearch, setIndexSearch] = useState('');
@@ -95,6 +97,7 @@ function InputPrestasi() {
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setUserRole(user.role || '');
+    setCurrentUserId(Number(user.id) || null);
 
     // Auto-fill biodata for siswa
     if (user.role === 'siswa') {
@@ -163,6 +166,7 @@ function InputPrestasi() {
   }, [indexStatus, indexJenisLomba, indexKategoriLomba, indexJuara, indexTingkat, indexDateFrom, indexDateTo]);
 
   const handleEdit = (item) => {
+    setEditingPendingSubmission(false);
     if (item.kategori_lomba === 'kelompok' && item.grup_lomba) {
       const sibs = allPrestasi.filter(p => p.grup_lomba === item.grup_lomba);
       setEditMembers(sibs.map(s => ({ value: s.nis, label: `${s.nama} (${s.nis})`, nama: s.nama, nis: s.nis, kelas: s.kelas, grha: s.grha })));
@@ -174,6 +178,28 @@ function InputPrestasi() {
     const nameToId = new Map((teachers || []).map(t => [t.nama, String(t.id)]));
     const ids = item.pembina_list
       ? item.pembina_list.map(n => nameToId.get(n)).filter(Boolean)
+      : (item.pembina_id ? [String(item.pembina_id)] : []);
+    editModal.setEditFormData(prev => ({ ...prev, pembina_ids: ids }));
+  };
+
+  const handleEditSubmission = (item, groupMembers = [item]) => {
+    setEditingPendingSubmission(true);
+    editModal.openEditModal(item);
+    if (item.kategori_lomba === 'kelompok' && item.grup_lomba) {
+      setEditMembers(groupMembers.map(member => ({
+        value: member.nis,
+        label: `${member.nama} (${member.nis})`,
+        nama: member.nama,
+        nis: member.nis,
+        kelas: member.kelas,
+        grha: member.grha
+      })));
+    } else {
+      setEditMembers([]);
+    }
+    const nameToId = new Map((teachers || []).map(teacher => [teacher.nama, String(teacher.id)]));
+    const ids = item.pembina_list
+      ? item.pembina_list.map(name => nameToId.get(name)).filter(Boolean)
       : (item.pembina_id ? [String(item.pembina_id)] : []);
     editModal.setEditFormData(prev => ({ ...prev, pembina_ids: ids }));
   };
@@ -324,9 +350,17 @@ function InputPrestasi() {
       editModal.editFoto.forEach((file) => data.append('foto', file));
       data.append('remove_evidence_ids', JSON.stringify(editModal.removedEvidenceIds));
 
-      await api.put(`/prestasi/${editModal.editingItem.id}`, data);
-      setMessage('Prestasi berhasil diperbarui!');
-      fetchAllPrestasi();
+      const endpoint = editingPendingSubmission
+        ? `/approvals/user-submissions/prestasi/${editModal.editingItem.id}`
+        : `/prestasi/${editModal.editingItem.id}`;
+      await api.put(endpoint, data);
+      setMessage(editingPendingSubmission ? 'Pengajuan prestasi berhasil diperbarui!' : 'Prestasi berhasil diperbarui!');
+      if (editingPendingSubmission) {
+        fetchUserSubmissions();
+        setEditingPendingSubmission(false);
+      } else {
+        fetchAllPrestasi();
+      }
       editModal.closeEditModal();
     } catch (error) {
       setMessage(error.response?.data?.message || 'Gagal memperbarui prestasi');
@@ -1315,7 +1349,7 @@ function InputPrestasi() {
           </div>
           <div className="form-group">
             <label>Kategori Lomba</label>
-            <select name="kategori_lomba" value={editModal.editFormData.kategori_lomba || 'individu'} onChange={(e) => editModal.setEditFormData({ ...editModal.editFormData, kategori_lomba: e.target.value })}>
+            <select name="kategori_lomba" value={editModal.editFormData.kategori_lomba || 'individu'} disabled={editingPendingSubmission} onChange={(e) => editModal.setEditFormData({ ...editModal.editFormData, kategori_lomba: e.target.value })}>
               <option value="individu">Individu</option>
               <option value="kelompok">Kelompok</option>
             </select>
@@ -1364,9 +1398,8 @@ function InputPrestasi() {
         </div>
       </EditModal>
 
-      {/* Submission History - Hidden for Superadmin and approvers */}
-      {userRole !== 'superadmin' && !canApprove && (
-        <div style={{ marginTop: '30px' }}>
+      {/* Submitters can edit their own pending submissions, including approvers. */}
+      <div style={{ marginTop: '30px' }}>
           <h3 style={{ marginBottom: '15px', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList size={18} /> Riwayat Pengajuan Prestasi</h3>
           {submissions.length === 0 ? (
             <p className="text-muted">Belum ada pengajuan</p>
@@ -1377,6 +1410,8 @@ function InputPrestasi() {
                 const isGroup = !!group.groupId;
                 const statuses = [...new Set(group.members.map(m => m.status))];
                 const memberNames = group.members.map(m => `${m.nama} (${m.nis})`).join(', ');
+                const canEditGroup = group.members.length > 0
+                  && group.members.every(member => member.status === 'pending' && Number(member.submitted_by) === currentUserId);
                 return (
                 <div key={group.groupId || first.id || index} style={{
                   padding: '15px',
@@ -1408,14 +1443,18 @@ function InputPrestasi() {
                   </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {statuses.map(s => <span key={s}>{getStatusBadge({ status: s })}</span>)}
+                    {canEditGroup && (
+                      <button className="btn btn-info" onClick={() => handleEditSubmission(first, group.members)} style={{ padding: '4px 10px', fontSize: '12px' }}>
+                        Edit
+                      </button>
+                    )}
                   </div>
                 </div>
                 );
               })}
-            </div>
-          )}
-        </div>
+          </div>
       )}
+      </div>
     </div>
   );
 }

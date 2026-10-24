@@ -27,6 +27,8 @@ const {
     attachEvidence,
     listEvidence,
     replaceEvidence,
+    parseEvidenceIdList,
+    validateEvidenceSelection,
     copyEvidence,
     deleteEvidenceForRecord,
     moveEvidenceToApproved,
@@ -723,6 +725,328 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), withEv
 });
 
 // ==================== APPROVAL ACTIONS ====================
+
+const pendingEditConfig = {
+    prestasi: { table: 'prestasi_approvals', evidenceType: 'prestasi', statusColumn: 'superadmin_status' },
+    event: { table: 'event_approvals', evidenceType: 'event', statusColumn: 'superadmin_status' },
+    organisasi: { table: 'organisasi_approvals', evidenceType: 'organisasi', statusColumn: 'superadmin_status' },
+    kepanitiaan: { table: 'kepanitiaan_approvals', evidenceType: 'kepanitiaan', statusColumn: 'superadmin_status' },
+    pelanggaran: { table: 'pelanggaran', evidenceType: 'pelanggaran', statusColumn: 'status' }
+};
+const pendingEditUploads = Object.fromEntries(
+    Object.entries(pendingEditConfig).map(([type, config]) => [
+        type,
+        withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), config.evidenceType)
+    ])
+);
+const pendingEditOptions = {
+    prestasi: {
+        juara: ['peserta', 'finalis', 'harapan_iii', 'harapan_ii', 'harapan_i', 'juara_iii', 'juara_ii', 'juara_i'],
+        kategori: ['sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional'],
+        jenis_lomba: ['akademik', 'non_akademik']
+    },
+    event: {
+        tingkat: ['sekolah', 'kecamatan', 'kabupaten', 'provinsi', 'nasional', 'internasional']
+    },
+    organisasi: {
+        jabatan_organisasi: ['ketua', 'wakil ketua', 'sekretaris', 'bendahara', 'koordinator', 'anggota']
+    },
+    kepanitiaan: {
+        jabatan_kepanitiaan: ['ketua', 'wakil ketua', 'sekretaris', 'bendahara', 'koordinator', 'anggota']
+    }
+};
+
+router.put('/user-submissions/:type/:id', auth, (req, res, next) => {
+    const uploadMiddleware = pendingEditUploads[req.params.type];
+    if (!uploadMiddleware) {
+        return res.status(400).json({ message: 'Jenis pengajuan tidak valid' });
+    }
+    return uploadMiddleware(req, res, next);
+}, async (req, res) => {
+    const config = pendingEditConfig[req.params.type];
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: 'ID pengajuan tidak valid' });
+    }
+
+    let conn;
+    let transactionStarted = false;
+    let removedEvidencePaths = [];
+    let updatedRows = [];
+    try {
+        const { type } = req.params;
+        const requestedGroupCategory = type === 'prestasi' && String(req.body.kategori_lomba) === 'kelompok';
+        const rowStatusColumn = type === 'pelanggaran' ? 'status' : await getApprovalStatusColumn();
+        conn = await db.getConnection();
+        await conn.beginTransaction();
+        transactionStarted = true;
+
+        const [selectedRows] = await conn.query(
+            `SELECT * FROM ${config.table} WHERE id = ? FOR UPDATE`,
+            [id]
+        );
+        if (selectedRows.length === 0) {
+            await conn.rollback();
+            transactionStarted = false;
+            return res.status(404).json({ message: 'Pengajuan tidak ditemukan' });
+        }
+        const selected = selectedRows[0];
+        if (Number(selected.submitted_by) !== Number(req.user.id)) {
+            await conn.rollback();
+            transactionStarted = false;
+            return res.status(403).json({ message: 'Anda hanya dapat mengedit pengajuan yang Anda kirim' });
+        }
+        if (getRowApprovalStatus(selected) !== 'pending') {
+            await conn.rollback();
+            transactionStarted = false;
+            return res.status(409).json({ message: 'Pengajuan sudah diproses dan tidak dapat diedit' });
+        }
+
+        let groupRows = [selected];
+        if (type === 'prestasi' && selected.grup_lomba) {
+            const [siblings] = await conn.query(
+                `SELECT * FROM prestasi_approvals WHERE grup_lomba = ? ORDER BY id FOR UPDATE`,
+                [selected.grup_lomba]
+            );
+            if (siblings.some((row) => Number(row.submitted_by) !== Number(req.user.id))) {
+                await conn.rollback();
+                transactionStarted = false;
+                return res.status(403).json({ message: 'Tidak semua anggota kelompok dikirim oleh akun Anda' });
+            }
+            if (siblings.some((row) => getRowApprovalStatus(row) !== 'pending')) {
+                await conn.rollback();
+                transactionStarted = false;
+                return res.status(409).json({ message: 'Kelompok sudah diproses dan tidak dapat diedit' });
+            }
+            groupRows = siblings;
+        } else if (requestedGroupCategory) {
+            const error = new Error('Kategori kelompok tidak memiliki data grup yang valid');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        const requiredText = (key, label, maxLength) => {
+            const value = String(req.body[key] ?? '').trim();
+            if (!value) {
+                const error = new Error(`${label} wajib diisi`);
+                error.statusCode = 400;
+                throw error;
+            }
+            if (value.length > maxLength) {
+                const error = new Error(`${label} maksimal ${maxLength} karakter`);
+                error.statusCode = 400;
+                throw error;
+            }
+            return value;
+        };
+        const requiredChoice = (key, label, choices, maxLength = 50) => {
+            const value = requiredText(key, label, maxLength);
+            if (!choices.includes(value)) {
+                const error = new Error(`${label} tidak valid`);
+                error.statusCode = 400;
+                throw error;
+            }
+            return value;
+        };
+
+        let updateColumns = [];
+        let updateValues = [];
+        let resolvedPrestasi = null;
+        let members = [];
+        if (type === 'prestasi') {
+            const kategoriLomba = selected.grup_lomba ? 'kelompok' : String(req.body.kategori_lomba || 'individu');
+            if (!['individu', 'kelompok'].includes(kategoriLomba) || (!!selected.grup_lomba !== (kategoriLomba === 'kelompok'))) {
+                const error = new Error('Kategori kelompok tidak dapat diubah pada pengajuan yang sudah dikirim');
+                error.statusCode = 400;
+                throw error;
+            }
+            const juara = requiredChoice('juara', 'Juara', pendingEditOptions.prestasi.juara);
+            const kategori = requiredChoice('kategori', 'Tingkat lomba', pendingEditOptions.prestasi.kategori);
+            const jenisLomba = requiredChoice('jenis_lomba', 'Jenis lomba', pendingEditOptions.prestasi.jenis_lomba);
+            const namaLomba = requiredText('nama_lomba', 'Nama lomba', 255);
+            let tanggalPelaksanaan;
+            try {
+                tanggalPelaksanaan = normalizeTanggalPelaksanaan(req.body.tanggal_pelaksanaan);
+            } catch (error) {
+                error.statusCode = error.statusCode || 400;
+                throw error;
+            }
+            const { id: pembinaId, nama: pembinaName } = await resolvePembina(req.body.pembina_id, req.body.pembina);
+            const mentorList = await resolvePembinaIds(req.body.pembina_ids);
+            const mentorIds = mentorList.length > 0 ? mentorList.map((mentor) => mentor.id) : (pembinaId ? [pembinaId] : []);
+            resolvedPrestasi = { juara, kategori, jenisLomba, namaLomba, tanggalPelaksanaan, pembinaId, pembinaName, mentorIds, kategoriLomba };
+            updateColumns = ['nama_lomba', 'juara', 'kategori', 'jenis_lomba', 'kategori_lomba', 'tanggal_pelaksanaan', 'pembina', 'pembina_id'];
+            updateValues = [namaLomba, juara, kategori, jenisLomba, kategoriLomba, tanggalPelaksanaan, pembinaName, pembinaId];
+            if (selected.grup_lomba) {
+                let requestedMembers;
+                try {
+                    requestedMembers = typeof req.body.anggota === 'string' ? JSON.parse(req.body.anggota) : req.body.anggota;
+                } catch {
+                    const error = new Error('Format data anggota tidak valid');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                if (!Array.isArray(requestedMembers) || requestedMembers.length < 2) {
+                    const error = new Error('Lomba kelompok membutuhkan minimal 2 anggota');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                const nises = requestedMembers.map((member) => String(member?.nis ?? '').trim());
+                if (nises.some((nis) => !nis) || new Set(nises).size !== nises.length) {
+                    const error = new Error('NIS anggota harus diisi dan tidak boleh duplikat');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                const [studentRows] = await conn.query(
+                    `SELECT id, nama, nis, kelas, grha FROM users WHERE role = 'siswa' AND nis IN (?)`,
+                    [nises]
+                );
+                const studentByNis = new Map(studentRows.map((student) => [String(student.nis), student]));
+                if (studentByNis.size !== nises.length) {
+                    const error = new Error('Satu atau lebih NIS anggota tidak ditemukan sebagai siswa');
+                    error.statusCode = 400;
+                    throw error;
+                }
+                members = nises.map((nis) => studentByNis.get(nis));
+            }
+        } else if (type === 'event') {
+            updateColumns = ['nama_event', 'tingkat'];
+            updateValues = [
+                requiredText('nama_event', 'Nama event', 255),
+                requiredChoice('tingkat', 'Tingkat event', pendingEditOptions.event.tingkat)
+            ];
+        } else if (type === 'organisasi') {
+            updateColumns = ['kategori_organisasi', 'jabatan_organisasi'];
+            updateValues = [
+                requiredText('kategori_organisasi', 'Organisasi', 255),
+                requiredChoice('jabatan_organisasi', 'Jabatan', pendingEditOptions.organisasi.jabatan_organisasi, 100)
+            ];
+        } else if (type === 'kepanitiaan') {
+            updateColumns = ['kategori_kepanitiaan', 'jabatan_kepanitiaan'];
+            updateValues = [
+                requiredText('kategori_kepanitiaan', 'Nama kepanitiaan', 255),
+                requiredChoice('jabatan_kepanitiaan', 'Jabatan', pendingEditOptions.kepanitiaan.jabatan_kepanitiaan, 100)
+            ];
+        } else {
+            const jenisPelanggaran = requiredText('jenis_pelanggaran', 'Jenis pelanggaran', 100);
+            const keterangan = requiredText('keterangan', 'Detail pelanggaran', 5000);
+            const pointDikurangi = await calculatePelanggaranPoints(jenisPelanggaran);
+            if (!pointDikurangi) {
+                const error = new Error('Detail pelanggaran belum memiliki konfigurasi tingkat atau point aktif');
+                error.statusCode = 400;
+                throw error;
+            }
+            updateColumns = ['jenis_pelanggaran', 'keterangan', 'point_dikurangi'];
+            updateValues = [jenisPelanggaran, keterangan, pointDikurangi];
+        }
+
+        const uploaded = uploadedPaths(req, config.evidenceType);
+        const removeEvidenceIds = parseEvidenceIdList(req.body.remove_evidence_ids);
+        const evidenceChanged = uploaded.length > 0 || removeEvidenceIds.length > 0;
+        const evidenceAnchor = groupRows[0];
+        let finalEvidencePaths = null;
+        if (evidenceChanged) {
+            await validateEvidenceSelection(config.table, evidenceAnchor.id, removeEvidenceIds, uploaded.length, conn.query);
+            const currentEvidence = await listEvidence(config.table, evidenceAnchor.id, conn.query);
+            const removeSet = new Set(removeEvidenceIds);
+            finalEvidencePaths = [
+                ...currentEvidence.filter((item) => !item.id || !removeSet.has(Number(item.id))).map((item) => item.path),
+                ...uploaded
+            ];
+            for (const row of groupRows) {
+                const rowEvidence = await listEvidence(config.table, row.id, conn.query);
+                removedEvidencePaths.push(...rowEvidence.map((item) => item.path));
+            }
+        }
+
+        const existingByUserId = new Map(groupRows.map((row) => [Number(row.user_id), row]));
+        const desiredUserIds = new Set(members.map((student) => Number(student.id)));
+        const rowsToDelete = selected.grup_lomba
+            ? groupRows.filter((row) => !desiredUserIds.has(Number(row.user_id)))
+            : [];
+
+        for (const row of groupRows.filter((groupRow) => !rowsToDelete.includes(groupRow))) {
+            const assignments = updateColumns.map((column) => `${column} = ?`);
+            const values = [...updateValues];
+            if (selected.grup_lomba) {
+                const member = members.find((student) => Number(student.id) === Number(row.user_id));
+                if (member) {
+                    assignments.push('nama = ?', 'nis = ?', 'kelas = ?', 'grha = ?');
+                    values.push(member.nama, member.nis, member.kelas || '', member.grha || '');
+                }
+            }
+            values.push(row.id, req.user.id, 'pending');
+            const [updated] = await conn.query(
+                `UPDATE ${config.table} SET ${assignments.join(', ')} WHERE id = ? AND submitted_by = ? AND ${rowStatusColumn} = ?`,
+                values
+            );
+            updatedRows.push(row.id);
+            if (type === 'prestasi') {
+                await setPembinaLinks(conn.query, 'prestasi_approval_pembina', 'approval_id', row.id, resolvedPrestasi.mentorIds);
+            }
+            if (evidenceChanged) {
+                await replaceEvidence(config.table, row.id, finalEvidencePaths, conn.query);
+            }
+        }
+
+        if (selected.grup_lomba) {
+            for (const member of members.filter((student) => !existingByUserId.has(Number(student.id)))) {
+                const [inserted] = await conn.query(
+                    `INSERT INTO prestasi_approvals
+                    (user_id, submitted_by, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [member.id, req.user.id, member.nama, member.nis, resolvedPrestasi.namaLomba, member.kelas || '', resolvedPrestasi.pembinaName, resolvedPrestasi.pembinaId, member.grha || '', resolvedPrestasi.juara, resolvedPrestasi.kategori, resolvedPrestasi.jenisLomba, 'kelompok', selected.grup_lomba, resolvedPrestasi.tanggalPelaksanaan]
+                );
+                await setPembinaLinks(conn.query, 'prestasi_approval_pembina', 'approval_id', inserted.insertId, resolvedPrestasi.mentorIds);
+                if (evidenceChanged) {
+                    await replaceEvidence(config.table, inserted.insertId, finalEvidencePaths, conn.query);
+                } else {
+                    await copyEvidence(config.table, evidenceAnchor.id, config.table, inserted.insertId, new Map(), conn.query);
+                }
+                updatedRows.push(inserted.insertId);
+            }
+            for (const row of rowsToDelete) {
+                const rowEvidence = await deleteEvidenceForRecord(config.table, row.id, conn.query);
+                removedEvidencePaths.push(...rowEvidence);
+                await conn.query('DELETE FROM prestasi_approval_pembina WHERE approval_id = ?', [row.id]);
+                await conn.query(
+                    `DELETE FROM prestasi_approvals WHERE id = ? AND submitted_by = ? AND ${rowStatusColumn} = ?`,
+                    [row.id, req.user.id, 'pending']
+                );
+            }
+        }
+
+        await conn.commit();
+        transactionStarted = false;
+        conn.release();
+        conn = null;
+
+        if (removedEvidencePaths.length > 0) {
+            try {
+                await deleteEvidenceFilesIfOrphan(removedEvidencePaths, { folderHint: config.evidenceType });
+            } catch (cleanupError) {
+                console.error('Failed to clean up pending submission evidence', cleanupError);
+            }
+        }
+        try {
+            await logActivity(req.user.id, 'EDIT_PENDING_SUBMISSION', `${req.user.nama} updated pending ${type} submission ${id}`, req.ip);
+        } catch (logError) {
+            console.error('Failed to log pending submission edit', logError);
+        }
+        return res.json({
+            message: 'Pengajuan berhasil diperbarui',
+            ids: [...new Set(updatedRows)]
+        });
+    } catch (error) {
+        if (transactionStarted && conn) {
+            try { await conn.rollback(); } catch (rollbackError) { console.error('Failed to roll back pending edit', rollbackError); }
+        }
+        console.error('Pending submission edit failed:', error);
+        return res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
+    } finally {
+        if (conn) conn.release();
+    }
+});
 
 // REMOVED: Pembina approval route - now only superadmin approval
 
