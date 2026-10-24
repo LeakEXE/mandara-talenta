@@ -3,11 +3,23 @@ const router = express.Router();
 const { auth, superAdminOnly } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan, replaceEvidenceFile } = require('../utils/fileUtils');
-const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const {
+    uploadedPaths,
+    attachEvidence,
+    listEvidence,
+    replaceEvidence,
+    updateEvidenceSelection,
+    parseEvidenceIdList,
+    validateEvidenceSelection,
+    withEvidenceUploadCleanup,
+    deleteEvidenceForRecord,
+    moveEvidenceToApproved,
+    deleteEvidenceFilesIfOrphan
+} = require('../utils/evidenceStore');
+const { ensureUploadSubdir } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
@@ -16,7 +28,7 @@ const storage = multer.diskStorage({
         cb(null, ensureUploadSubdir('event'));
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
     }
 });
 
@@ -70,6 +82,7 @@ router.get('/all', auth, async (req, res) => {
             LIMIT ? OFFSET ?
         `, [...params, limit, offset]);
 
+        await attachEvidence(events, 'event');
         res.json({
             data: events,
             pagination: {
@@ -92,6 +105,7 @@ router.get('/user/:userId', auth, async (req, res) => {
             'SELECT id, user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status, rejection_reason, created_at FROM event WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
             [req.params.userId, 'approved']
         );
+        await attachEvidence(events, 'event');
         res.json(events);
     } catch (error) {
         console.error(error);
@@ -100,22 +114,11 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // Create event
-router.post('/', auth, upload.single('foto'), async (req, res) => {
+router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'event'), async (req, res) => {
     try {
         const { nama, nis, kelas, grha, nama_event, tingkat } = req.body;
-        let foto = req.file ? req.file.filename : null;
-
-        // Rename file to NIS_Nama Event format
-        if (req.file && foto) {
-            const oldPath = resolveUploadPath(path.join('uploads/event', foto));
-            const ext = path.extname(req.file.originalname);
-            const newFileName = `${nis}_${nama_event}${ext}`;
-            const newPath = resolveUploadPath(path.join('uploads/event', newFileName));
-
-            // Rename the file
-            fs.renameSync(oldPath, newPath);
-            foto = newFileName;
-        }
+        const fotoPaths = uploadedPaths(req, 'event');
+        const foto = fotoPaths[0] || null;
 
         const point = await calculateEventPoints(tingkat);
 
@@ -123,6 +126,7 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
             'INSERT INTO event (user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [req.user.id, nama, nis, kelas, grha, nama_event, tingkat, foto, point]
         );
+        await replaceEvidence('event', result.insertId, fotoPaths);
 
         await db.query(
             'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
@@ -154,23 +158,18 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         const eventData = event[0];
-        let newFotoPath = eventData.foto;
-
-        // Move photo to approved folder if it exists
-        if (eventData.foto) {
-            const movedPath = movePhotoToApprovedFolder(path.join('uploads/event', eventData.foto), 'event');
-            if (movedPath) {
-                newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-            }
-        }
+        const sourceEvidence = await listEvidence('event', eventId, conn.query);
+        const movedEvidence = moveEvidenceToApproved(sourceEvidence.map((item) => item.path), 'event');
+        const finalEvidence = sourceEvidence.map((item) => movedEvidence.get(item.path) || item.path);
 
         // Conditional update closes the race between the SELECT above and
         // this write (two admins approving at once): only one wins.
-        const [updated] = await conn.query('UPDATE event SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, eventId, 'pending']);
+        const [updated] = await conn.query('UPDATE event SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', finalEvidence[0] || null, eventId, 'pending']);
         if (updated.affectedRows === 0) {
             await conn.rollback();
             return res.status(400).json({ message: 'Event ini sudah diproses' });
         }
+        await replaceEvidence('event', eventId, finalEvidence, conn.query);
 
         // Recompute the total from approved records (same formula as
         // syncIpt.js) never arithmetic, so double-approvals and drift
@@ -214,6 +213,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
             return res.status(404).json({ message: 'Event not found' });
         }
         const wasApproved = rows[0].status === 'approved';
+        let rejectedEvidence = [];
 
         // Serialize concurrent mutations of this student, then reject.
         if (wasApproved) {
@@ -221,6 +221,8 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         }
 
         await conn.query('UPDATE event SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, eventId]);
+        rejectedEvidence = (await listEvidence('event', eventId, conn.query)).map((item) => item.path);
+        await deleteEvidenceForRecord('event', eventId, conn.query);
 
         // A rejected record stops counting: recompute WITHOUT a tombstone
         // row ('*_reject' is not in the ipt_history CHECK list), then remove
@@ -242,10 +244,11 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        if (rows[0]?.foto) {
-            await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'event', id: eventId }, folderHint: 'event' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(rejectedEvidence, {
+            exclude: { table: 'event', id: eventId },
+            folderHint: 'event'
+        });
 
         res.json({ message: 'Event rejected' });
     } catch (error) {
@@ -258,7 +261,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 });
 
 // Update event
-router.put('/:id', auth, upload.single('foto'), async (req, res) => {
+router.put('/:id', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'event'), async (req, res) => {
     try {
         const eventId = req.params.id;
         const { nama, nis, kelas, grha, nama_event, tingkat } = req.body;
@@ -269,20 +272,13 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         }
 
         const eventData = event[0];
-        let foto = eventData.foto;
-
-        // Swap evidence for the new upload (keeps the timestamp-unique
-        // multer name; approved rows land in approved/).
-        if (req.file) {
-            const next = await replaceEvidenceFile(db, {
-                oldFoto: foto,
-                uploadedFilename: req.file.filename,
-                recordType: 'event',
-                approved: eventData.status === 'approved',
-                exclude: { table: 'event', id: eventId }
-            });
-            if (next) foto = next;
-        }
+        const uploaded = uploadedPaths(req, 'event');
+        const removeIds = parseEvidenceIdList(req.body.remove_evidence_ids);
+        await validateEvidenceSelection('event', eventId, removeIds, uploaded.length);
+        const moved = eventData.status === 'approved'
+            ? moveEvidenceToApproved(uploaded, 'event')
+            : new Map();
+        const newEvidence = uploaded.map((p) => moved.get(p) || p);
 
         // Recalculate points if tingkat changed
         const point = await calculateEventPoints(tingkat);
@@ -290,6 +286,18 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
+
+            let finalEvidence = null;
+            let removedEvidence = [];
+            if (newEvidence.length > 0 || removeIds.length > 0) {
+                const result = await updateEvidenceSelection('event', eventId, {
+                    removeIds,
+                    newPaths: newEvidence
+                }, conn.query);
+                finalEvidence = result.finalPaths;
+                removedEvidence = result.removedPaths;
+            }
+            const foto = finalEvidence ? (finalEvidence[0] || null) : eventData.foto;
 
             const [upd] = await conn.query(
                 'UPDATE event SET nama = ?, nis = ?, kelas = ?, grha = ?, nama_event = ?, tingkat = ?, foto = ?, point = ? WHERE id = ?',
@@ -320,6 +328,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             );
 
             await conn.commit();
+            await deleteEvidenceFilesIfOrphan(removedEvidence, { folderHint: 'event' });
         } catch (error) {
             try { await conn.rollback(); } catch (_) {}
             throw error;
@@ -330,7 +339,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         res.json({ message: 'Event updated successfully' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ message: status >= 500 ? 'Server error' : error.message });
     }
 });
 
@@ -354,7 +364,9 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         if (wasApproved) {
             await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [eventData.user_id]);
         }
+        const evidencePaths = (await listEvidence('event', eventId, conn.query)).map((item) => item.path);
         await conn.query('DELETE FROM event WHERE id = ?', [eventId]);
+        await deleteEvidenceForRecord('event', eventId, conn.query);
 
         // Approved records contributed to the total: recompute it from the
         // remaining approved records (same formula as syncIpt.js) this
@@ -380,11 +392,8 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        // (kelompok siblings may share one file never strand them).
-        if (eventData.foto) {
-            await deletePhotoIfOrphan(db, eventData.foto, { folderHint: 'event' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(evidencePaths, { folderHint: 'event' });
 
         res.json({ message: 'Event deleted successfully' });
     } catch (error) {

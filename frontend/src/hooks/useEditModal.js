@@ -4,13 +4,15 @@ const useEditModal = () => {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [editFormData, setEditFormData] = useState({});
-    const [editFoto, setEditFoto] = useState(null);
+    const [editFoto, setEditFoto] = useState([]);
+    const [removedEvidenceIds, setRemovedEvidenceIds] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
 
     const openEditModal = (item) => {
         setEditingItem(item);
         setEditFormData(item);
-        setEditFoto(null);
+        setEditFoto([]);
+        setRemovedEvidenceIds([]);
         setShowEditModal(true);
     };
 
@@ -18,7 +20,8 @@ const useEditModal = () => {
         setShowEditModal(false);
         setEditingItem(null);
         setEditFormData({});
-        setEditFoto(null);
+        setEditFoto([]);
+        setRemovedEvidenceIds([]);
         setIsLoading(false);
     };
 
@@ -31,6 +34,8 @@ const useEditModal = () => {
         setEditFormData,
         editFoto,
         setEditFoto,
+        removedEvidenceIds,
+        setRemovedEvidenceIds,
         isLoading,
         setIsLoading,
         openEditModal,

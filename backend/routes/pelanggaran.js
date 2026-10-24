@@ -3,13 +3,25 @@ const router = express.Router();
 const { auth, checkInputAccess, superAdminOnly, checkPermission } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
 const { calculatePelanggaranPoints } = require('../constants/points');
 const { resolveStudentIdByNis } = require('../utils/ipt');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan, evidenceSourcePath, replaceEvidenceFile } = require('../utils/fileUtils');
-const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const {
+    uploadedPaths,
+    attachEvidence,
+    listEvidence,
+    replaceEvidence,
+    updateEvidenceSelection,
+    parseEvidenceIdList,
+    validateEvidenceSelection,
+    withEvidenceUploadCleanup,
+    deleteEvidenceForRecord,
+    moveEvidenceToApproved,
+    deleteEvidenceFilesIfOrphan
+} = require('../utils/evidenceStore');
+const { ensureUploadSubdir } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
@@ -18,7 +30,7 @@ const storage = multer.diskStorage({
         cb(null, ensureUploadSubdir('pelanggaran'));
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
     }
 });
 
@@ -70,6 +82,7 @@ router.get('/all', auth, async (req, res) => {
             LIMIT ? OFFSET ?
         `, [...params, limit, offset]);
 
+        await attachEvidence(pelanggaran, 'pelanggaran');
         res.json({
             data: pelanggaran,
             pagination: {
@@ -92,6 +105,7 @@ router.get('/user/:userId', auth, async (req, res) => {
             'SELECT * FROM pelanggaran WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
             [req.params.userId, 'approved']
         );
+        await attachEvidence(pelanggaran, 'pelanggaran');
         res.json(pelanggaran);
     } catch (error) {
         console.error(error);
@@ -100,33 +114,19 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // Create pelanggaran
-router.post('/', auth, checkPermission('pelanggaran'), upload.single('foto'), async (req, res) => {
+router.post('/', auth, checkPermission('pelanggaran'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'pelanggaran'), async (req, res) => {
     try {
         const { nama, nis, kelas, grha, keterangan, jenis_pelanggaran } = req.body;
-        let foto = req.file ? req.file.filename : null;
-
-        // Rename file to NIS_Keterangan_UniqueId format
-        if (req.file && foto) {
-            const oldPath = resolveUploadPath(path.join('uploads/pelanggaran', foto));
-            const ext = path.extname(req.file.originalname);
-            const uniqueId = Date.now().toString(36);
-            const newFileName = `${nis}_${keterangan}_${uniqueId}${ext}`;
-            const newPath = resolveUploadPath(path.join('uploads/pelanggaran', newFileName));
-
-            // Rename the file
-            fs.renameSync(oldPath, newPath);
-            // Store the canonical full relative path (bare names break
-            // viewers that concatenate the URL directly).
-            foto = `uploads/pelanggaran/${newFileName}`;
-        }
+        const fotoPaths = uploadedPaths(req, 'pelanggaran');
 
         const point_dikurangi = await calculatePelanggaranPoints(jenis_pelanggaran);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
 
         const [result] = await db.query(
             'INSERT INTO pelanggaran (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [userId, req.user.id, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi]
+            [userId, req.user.id, nama, nis, kelas, grha, keterangan, fotoPaths[0] || null, jenis_pelanggaran, point_dikurangi]
         );
+        await replaceEvidence('pelanggaran', result.insertId, fotoPaths);
 
         await db.query(
             'INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)',
@@ -136,7 +136,8 @@ router.post('/', auth, checkPermission('pelanggaran'), upload.single('foto'), as
         res.status(201).json({ message: 'Pelanggaran submitted for approval', id: result.insertId });
     } catch (error) {
         console.error(error);
-        res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ message: status >= 500 ? 'Server error' : error.message });
     }
 });
 
@@ -157,28 +158,21 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         const pelanggaranData = pelanggaran[0];
-        let newFotoPath = pelanggaranData.foto;
-
-        // Move photo to approved folder if it exists. evidenceSourcePath
-        // handles every stored shape (full 'uploads/...' or bare filename);
-        // a plain path.join here would double full paths and silently skip.
-        if (pelanggaranData.foto) {
-            const movedPath = movePhotoToApprovedFolder(evidenceSourcePath(pelanggaranData.foto, 'pelanggaran'), 'pelanggaran');
-            if (movedPath) {
-                newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-            }
-        }
+        const sourceEvidence = await listEvidence('pelanggaran', pelanggaranId, conn.query);
+        const movedEvidence = moveEvidenceToApproved(sourceEvidence.map((item) => item.path), 'pelanggaran');
+        const finalEvidence = sourceEvidence.map((item) => movedEvidence.get(item.path) || item.path);
 
         // Conditional update closes the race between the SELECT above and
         // this write (two admins approving at once): only one wins.
         const [updated] = await conn.query(
             'UPDATE pelanggaran SET status = ?, foto = ? WHERE id = ? AND status = ?',
-            ['approved', newFotoPath, pelanggaranId, 'pending']
+            ['approved', finalEvidence[0] || null, pelanggaranId, 'pending']
         );
         if (updated.affectedRows === 0) {
             await conn.rollback();
             return res.status(404).json({ message: 'Pelanggaran not found or already processed' });
         }
+        await replaceEvidence('pelanggaran', pelanggaranId, finalEvidence, conn.query);
 
         // Recompute the total from approved records (same formula as
         // syncIpt.js) never arithmetic, so double-approvals and drift
@@ -222,6 +216,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
             return res.status(404).json({ message: 'Pelanggaran not found' });
         }
         const wasApproved = rows[0].status === 'approved';
+        let rejectedEvidence = [];
 
         // Serialize concurrent mutations of this student, then reject.
         if (wasApproved) {
@@ -229,6 +224,8 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         }
 
         await conn.query('UPDATE pelanggaran SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, pelanggaranId]);
+        rejectedEvidence = (await listEvidence('pelanggaran', pelanggaranId, conn.query)).map((item) => item.path);
+        await deleteEvidenceForRecord('pelanggaran', pelanggaranId, conn.query);
 
         // A rejected record stops counting: recompute WITHOUT a tombstone
         // row ('*_reject' is not in the ipt_history CHECK list), then remove
@@ -250,10 +247,11 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        if (rows[0]?.foto) {
-            await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'pelanggaran', id: pelanggaranId }, folderHint: 'pelanggaran' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(rejectedEvidence, {
+            exclude: { table: 'pelanggaran', id: pelanggaranId },
+            folderHint: 'pelanggaran'
+        });
 
         res.json({ message: 'Pelanggaran rejected' });
     } catch (error) {
@@ -266,7 +264,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 });
 
 // Update pelanggaran
-router.put('/:id', auth, upload.single('foto'), async (req, res) => {
+router.put('/:id', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'pelanggaran'), async (req, res) => {
     try {
         const pelanggaranId = req.params.id;
         const { nama, nis, kelas, grha, keterangan, jenis_pelanggaran } = req.body;
@@ -277,20 +275,13 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         }
 
         const pelanggaranData = pelanggaran[0];
-        let foto = pelanggaranData.foto;
-
-        // Swap evidence for the new upload (keeps the timestamp-unique
-        // multer name; approved rows land in approved/).
-        if (req.file) {
-            const next = await replaceEvidenceFile(db, {
-                oldFoto: foto,
-                uploadedFilename: req.file.filename,
-                recordType: 'pelanggaran',
-                approved: pelanggaranData.status === 'approved',
-                exclude: { table: 'pelanggaran', id: pelanggaranId }
-            });
-            if (next) foto = next;
-        }
+        const uploaded = uploadedPaths(req, 'pelanggaran');
+        const removeIds = parseEvidenceIdList(req.body.remove_evidence_ids);
+        await validateEvidenceSelection('pelanggaran', pelanggaranId, removeIds, uploaded.length);
+        const moved = pelanggaranData.status === 'approved'
+            ? moveEvidenceToApproved(uploaded, 'pelanggaran')
+            : new Map();
+        const newEvidence = uploaded.map((p) => moved.get(p) || p);
 
         // Recalculate points if jenis_pelanggaran changed
         const point_dikurangi = await calculatePelanggaranPoints(jenis_pelanggaran);
@@ -298,6 +289,18 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
+
+            let finalEvidence = null;
+            let removedEvidence = [];
+            if (newEvidence.length > 0 || removeIds.length > 0) {
+                const result = await updateEvidenceSelection('pelanggaran', pelanggaranId, {
+                    removeIds,
+                    newPaths: newEvidence
+                }, conn.query);
+                finalEvidence = result.finalPaths;
+                removedEvidence = result.removedPaths;
+            }
+            const foto = finalEvidence ? (finalEvidence[0] || null) : pelanggaranData.foto;
 
             const [upd] = await conn.query(
                 'UPDATE pelanggaran SET nama = ?, nis = ?, kelas = ?, grha = ?, keterangan = ?, foto = ?, jenis_pelanggaran = ?, point_dikurangi = ? WHERE id = ?',
@@ -328,6 +331,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             );
 
             await conn.commit();
+            await deleteEvidenceFilesIfOrphan(removedEvidence, { folderHint: 'pelanggaran' });
         } catch (error) {
             try { await conn.rollback(); } catch (_) {}
             throw error;
@@ -338,7 +342,7 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         res.json({ message: 'Pelanggaran updated successfully' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(error.statusCode || 500).json({ message: error.message || 'Server error' });
     }
 });
 
@@ -362,7 +366,9 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
         if (wasApproved) {
             await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [pelanggaranData.user_id]);
         }
+        const evidencePaths = (await listEvidence('pelanggaran', pelanggaranId, conn.query)).map((item) => item.path);
         await conn.query('DELETE FROM pelanggaran WHERE id = ?', [pelanggaranId]);
+        await deleteEvidenceForRecord('pelanggaran', pelanggaranId, conn.query);
 
         // Approved violations contributed to the total: recompute it from the
         // remaining approved records (same formula as syncIpt.js) removing
@@ -388,11 +394,8 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        // (rows sharing one file must never strand each other).
-        if (pelanggaranData.foto) {
-            await deletePhotoIfOrphan(db, pelanggaranData.foto, { folderHint: 'pelanggaran' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(evidencePaths, { folderHint: 'pelanggaran' });
 
         res.json({ message: 'Pelanggaran deleted successfully' });
     } catch (error) {

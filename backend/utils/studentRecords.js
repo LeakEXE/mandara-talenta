@@ -1,5 +1,6 @@
 const db = require('../config/database');
 const { attachPembinaLists } = require('./ipt');
+const { attachEvidence } = require('./evidenceStore');
 
 async function getStudentRecords(userId) {
     const [prestasi] = await db.query(
@@ -33,6 +34,13 @@ async function getStudentRecords(userId) {
         [userId, 'approved']
     );
 
+    await Promise.all([
+        attachEvidence(prestasi, 'prestasi'),
+        attachEvidence(organisasi, 'organisasi'),
+        attachEvidence(kepanitiaan, 'kepanitiaan'),
+        attachEvidence(event, 'event'),
+        attachEvidence(pelanggaran, 'pelanggaran')
+    ]);
     const prestasiCount = prestasi.length;
 
     return {

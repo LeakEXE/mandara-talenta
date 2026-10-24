@@ -42,3 +42,5 @@ build/
 patches
 *.csv
 *.old
+**.test.*
+*.sql

@@ -4,6 +4,7 @@ import { toTitleCase } from '../utils/perilaku';
 import { formatDisplayText, formatTanggalLomba } from '../utils/formatDisplayText';
 import { FileText } from 'lucide-react';
 import { isPdfPath } from './EvidenceViewer';
+import { evidenceItemsForRecord } from '../utils/evidence';
 
 const TABS = [
     { key: 'prestasi', label: 'Prestasi' },
@@ -218,8 +219,9 @@ function StudentRecordsHistory({ records, title = 'Riwayat Prestasi & Event', sh
                 <p className="text-muted">Belum ada data {visibleTabs.find((t) => t.key === activeTab)?.label?.toLowerCase()} yang disetujui.</p>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {activeItems.map((item) => (
-                        <div
+                    {activeItems.map((item) => {
+                        const evidence = evidenceItemsForRecord(item);
+                        return <div
                             key={item.id}
                             style={{
                                 display: 'flex',
@@ -231,11 +233,18 @@ function StudentRecordsHistory({ records, title = 'Riwayat Prestasi & Event', sh
                             }}
                         >
                             {activeTab !== 'perilaku' && (
-                                <RecordThumbnail
-                                    path={item.foto || item.foto_path}
-                                    type={activeTab}
-                                    alt="Bukti"
-                                />
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+                                    {evidence.length > 0
+                                        ? evidence.map((file) => (
+                                            <RecordThumbnail
+                                                key={file.id || file.path}
+                                                path={file.path}
+                                                type={activeTab}
+                                                alt="Bukti"
+                                            />
+                                        ))
+                                        : <RecordThumbnail path={null} type={activeTab} alt="Bukti" />}
+                                </div>
                             )}
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 {renderRecordDetails(item, activeTab)}
@@ -243,8 +252,8 @@ function StudentRecordsHistory({ records, title = 'Riwayat Prestasi & Event', sh
                                     {formatDate(item.created_at)}
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        </div>;
+                    })}
                 </div>
             )}
         </div>

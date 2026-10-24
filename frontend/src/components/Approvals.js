@@ -240,15 +240,15 @@ function Approvals() {
       return `${API_BASE_URL.replace('/api', '')}${cleanPath}`;
     };
 
-    const getItemPhoto = (item, itemType) => {
-      // `foto` is the actual column name returned by the approvals API
-      // (`foto_path` kept as fallback for legacy rows).
-      const foto = item.foto || item.foto_path;
-      if (!foto) return null;
-      if (itemType === 'pelanggaran') {
-        return getPhotoUrl(foto, 'pelanggaran');
-      }
-      return getPhotoUrl(foto);
+    const getItemPhotos = (item, itemType) => {
+      const evidence = Array.isArray(item.evidence) && item.evidence.length > 0
+        ? item.evidence
+        : (item.foto || item.foto_path ? [{ id: null, path: item.foto || item.foto_path }] : []);
+      return evidence.map((file) => ({
+        id: file.id,
+        path: file.path,
+        url: getPhotoUrl(file.path, itemType)
+      }));
     };
 
     // Every remaining table type shows the photo + approval-status columns.
@@ -415,25 +415,30 @@ function Approvals() {
                   marginBottom: '2px'
                 }}>Foto / Dokumen</div>
                 <div style={{ fontSize: '13.5px' }}>
-                  {getItemPhoto(item, type) ? (
-                    <button
-                      onClick={() => { setPreviewError(false); setPreviewImage(getItemPhoto(item, type)); }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        cursor: 'pointer',
-                        color: BLUE,
-                        fontWeight: '600',
-                        fontSize: '13.5px',
-                        fontFamily: 'inherit',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px'
-                      }}
-                    >
-                      <Camera size={14} /> Lihat Bukti
-                    </button>
+                  {getItemPhotos(item, type).length > 0 ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {getItemPhotos(item, type).map((file, index) => (
+                        <button
+                          key={file.id || file.path}
+                          onClick={() => { setPreviewError(false); setPreviewImage(file.url); }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: BLUE,
+                            fontWeight: '600',
+                            fontSize: '13.5px',
+                            fontFamily: 'inherit',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <Camera size={14} /> Bukti {index + 1}
+                        </button>
+                      ))}
+                    </div>
                   ) : (
                     <span style={{ color: MUTED }}>-</span>
                   )}
@@ -703,26 +708,26 @@ function Approvals() {
                     borderBottom: `1px solid ${BORDER}`,
                     verticalAlign: "middle"
                   }}>
-                    {getItemPhoto(item, type) ? (
-                      <div>
-                        {isPdfPath(getItemPhoto(item, type)) ? (
-                          <EvidenceFileThumb
-                            size={60}
-                            onOpen={() => { setPreviewError(false); setPreviewImage(getItemPhoto(item, type)); }}
-                          />
-                        ) : (
-                        <img
-                          src={getItemPhoto(item, type)}
-                          alt="Bukti"
-                          style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '5px', cursor: 'pointer' }}
-                          onClick={() => { setPreviewError(false); setPreviewImage(getItemPhoto(item, type)); }}
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.insertAdjacentHTML('afterend', '<span style="color:#6b7280;font-size:12.5px">Bukti tidak ditemukan</span>');
-                          }}
-                          title="Klik untuk memperbesar"
-                        />
-                        )}
+                    {getItemPhotos(item, type).length > 0 ? (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {getItemPhotos(item, type).map((file) => (
+                          isPdfPath(file.url) ? (
+                            <EvidenceFileThumb
+                              key={file.id || file.path}
+                              size={60}
+                              onOpen={() => { setPreviewError(false); setPreviewImage(file.url); }}
+                            />
+                          ) : (
+                            <img
+                              key={file.id || file.path}
+                              src={file.url}
+                              alt="Bukti"
+                              style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '5px', cursor: 'pointer' }}
+                              onClick={() => { setPreviewError(false); setPreviewImage(file.url); }}
+                              title="Klik untuk memperbesar"
+                            />
+                          )
+                        ))}
                       </div>
                     ) : (
                       <span style={{ color: MUTED }}>-</span>

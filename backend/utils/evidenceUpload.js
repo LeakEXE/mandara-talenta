@@ -4,6 +4,7 @@ const path = require('path');
 // Accepts images + PDF (NOT office docs). Avatars and school logos keep
 // their own image-only configs in profile.js / school-config.js.
 const EVIDENCE_MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const EVIDENCE_MAX_FILES = 5;
 
 const EVIDENCE_MIMETYPES = [
     'image/jpeg',
@@ -23,10 +24,14 @@ function evidenceFileFilter(req, file, cb) {
     cb(new Error('Hanya file gambar (JPG, PNG, GIF, WebP) dan PDF yang diizinkan (maks 10MB)'));
 }
 
-const EVIDENCE_LIMITS = { fileSize: EVIDENCE_MAX_SIZE };
+const EVIDENCE_LIMITS = {
+    fileSize: EVIDENCE_MAX_SIZE,
+    files: EVIDENCE_MAX_FILES
+};
 
 module.exports = {
     EVIDENCE_MAX_SIZE,
+    EVIDENCE_MAX_FILES,
     EVIDENCE_MIMETYPES,
     EVIDENCE_EXTENSIONS,
     evidenceFileFilter,

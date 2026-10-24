@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
 const path = require('path');
 const { auth, approverOnly, approverFor, checkInputAccess, getApprovalScopes } = require('../middleware/auth');
 const db = require('../config/database');
@@ -22,7 +22,17 @@ const {
     approveSubmission,
     rejectSubmission
 } = require('../utils/approvalSchema');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan } = require('../utils/fileUtils');
+const {
+    uploadedPaths,
+    attachEvidence,
+    listEvidence,
+    replaceEvidence,
+    copyEvidence,
+    deleteEvidenceForRecord,
+    moveEvidenceToApproved,
+    deleteEvidenceFilesIfOrphan,
+    withEvidenceUploadCleanup
+} = require('../utils/evidenceStore');
 const { ensureUploadSubdir, UPLOAD_DIR, resolveUploadPath } = require('../utils/paths');
 const { getCurrentAcademicYear } = require('../utils/academicYear');
 const fs = require('fs');
@@ -158,7 +168,7 @@ const saveFileLocally = (filePath) => {
 // ==================== SUBMIT FOR APPROVAL ====================
 
 // Submit Prestasi for Approval (or Direct Submit for Superadmin)
-router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.single('foto'), async (req, res) => {
+router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'prestasi'), async (req, res) => {
     try {
         const userRole = req.user.role;
         const { nama, nis, nama_lomba, pembina, pembina_id, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
@@ -189,8 +199,8 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         } else {
             anggota = [{ nama, nis }];
         }
-        let fotoPath = req.file ? saveFileLocally(req.file.path) : null;
-        console.log('Prestasi - Using local path:', fotoPath);
+        const fotoPaths = uploadedPaths(req, 'prestasi');
+        console.log('Prestasi - Using local paths:', fotoPaths);
 
         // Resolve pembina to a guru user id (frontend sends pembina_id from the teachers dropdown).
         const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(pembina_id, pembina);
@@ -226,12 +236,10 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         // keep the type-folder path; PUT /superadmin/:type/:id moves it on
         // approval (like the other four types already do).
         const directAdd = await canDirectAdd(req.user.id, userRole, 'prestasi');
-        let sharedFotoPath = fotoPath;
-        if (directAdd && fotoPath) {
-            const movedPath = movePhotoToApprovedFolder(fotoPath, 'prestasi');
-            if (movedPath) {
-                sharedFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-            }
+        let sharedFotoPaths = fotoPaths;
+        if (directAdd && fotoPaths.length > 0) {
+            const moved = moveEvidenceToApproved(fotoPaths, 'prestasi');
+            sharedFotoPaths = fotoPaths.map((p) => moved.get(p) || p);
         }
         
         // DIRECT ADD (superadmin, or guru/pegawai holding the 'prestasi'
@@ -251,8 +259,9 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
                         `INSERT INTO prestasi
                         (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto, point, status)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, sharedFotoPath, point]
+                        [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, sharedFotoPaths[0] || null, point]
                     );
+                    await replaceEvidence('prestasi', result.insertId, sharedFotoPaths, conn.query);
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
                     await applyIptChange(m.id, 'prestasi', point, buildKeterangan('prestasi', { nama_lomba, juara, kategori }), conn.query, { type: 'prestasi', id: result.insertId });
                     insertedIds.push(result.insertId);
@@ -275,17 +284,29 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
         }
 
         // QUEUE: siswa + staff without the approval scope submit for approval
-        // (one row per member, same grup_lomba)
+        // (one row per member, same grup_lomba). All rows and their evidence
+        // commit together so a group submission is never half-created.
         const insertedIds = [];
-        for (const m of members) {
-            const [result] = await db.query(
-                `INSERT INTO prestasi_approvals
-                (user_id, submitted_by, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [m.id, req.user.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, fotoPath]
-            );
-            await setPembinaLinks(db.query, 'prestasi_approval_pembina', 'approval_id', result.insertId, mentorIds);
-            insertedIds.push(result.insertId);
+        const conn = await db.getConnection();
+        try {
+            await conn.beginTransaction();
+            for (const m of members) {
+                const [result] = await conn.query(
+                    `INSERT INTO prestasi_approvals
+                    (user_id, submitted_by, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [m.id, req.user.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, kategori_lomba, grupLomba, tanggalPelaksanaan, fotoPaths[0] || null]
+                );
+                await replaceEvidence('prestasi_approvals', result.insertId, fotoPaths, conn.query);
+                await setPembinaLinks(conn.query, 'prestasi_approval_pembina', 'approval_id', result.insertId, mentorIds);
+                insertedIds.push(result.insertId);
+            }
+            await conn.commit();
+        } catch (error) {
+            try { await conn.rollback(); } catch (_) {}
+            throw error;
+        } finally {
+            conn.release();
         }
 
         // Log activity
@@ -319,14 +340,14 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), upload.singl
 });
 
 // Submit Pelanggaran for Approval (or Direct Submit for Superadmin)
-router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload.single('foto'), async (req, res) => {
+router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'pelanggaran'), async (req, res) => {
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, keterangan, jenis_pelanggaran } = req.body;
         requireFields(req.body, ['nama', 'nis', 'grha', 'keterangan', 'jenis_pelanggaran']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
-        let foto_path = req.file ? saveFileLocally(req.file.path) : null;
-        console.log('Pelanggaran - Using local path:', foto_path);
+        const fotoPaths = uploadedPaths(req, 'pelanggaran');
+        console.log('Pelanggaran - Using local paths:', fotoPaths);
         const point = await calculatePelanggaranPoints(jenis_pelanggaran);
         if (!point) {
             return res.status(400).json({ message: 'Detail pelanggaran belum memiliki konfigurasi tingkat atau point aktif' });
@@ -341,14 +362,9 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
         if (await canDirectAdd(req.user.id, userRole, 'pelanggaran')) {
             console.log('Pelanggaran - Direct submission (privileged)');
 
-            // Move photo to organized folder if exists
-            let finalFotoPath = foto_path;
-            if (foto_path) {
-                const movedPath = movePhotoToApprovedFolder(foto_path, 'pelanggaran');
-                if (movedPath) {
-                    finalFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-                }
-            }
+            // Move every file to the organized folder once.
+            const moved = moveEvidenceToApproved(fotoPaths, 'pelanggaran');
+            const finalFotoPaths = fotoPaths.map((p) => moved.get(p) || p);
 
             const conn = await db.getConnection();
             let insertedId = null;
@@ -358,9 +374,10 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
                     `INSERT INTO pelanggaran
                     (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                    [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, finalFotoPath, jenis_pelanggaran, point]
+                    [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, finalFotoPaths[0] || null, jenis_pelanggaran, point]
                 );
                 insertedId = result.insertId;
+                await replaceEvidence('pelanggaran', insertedId, finalFotoPaths, conn.query);
 
                 await applyIptChange(userId, 'pelanggaran', point, buildKeterangan('pelanggaran', { jenis_pelanggaran }), conn.query, { type: 'pelanggaran', id: insertedId });
 
@@ -389,8 +406,9 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
             `INSERT INTO pelanggaran
             (user_id, submitted_by, nama, nis, kelas, grha, keterangan, foto, jenis_pelanggaran, point_dikurangi, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-            [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, foto_path, jenis_pelanggaran, point]
+            [userId, req.user.id, nama, nis, calculatedClass, grha, keterangan, fotoPaths[0] || null, jenis_pelanggaran, point]
         );
+        await replaceEvidence('pelanggaran', result.insertId, fotoPaths, db.query);
 
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_PELANGGARAN', `${req.user.nama} submitted pelanggaran for approval: ${jenis_pelanggaran}`, req.ip);
@@ -409,14 +427,14 @@ router.post('/pelanggaran/submit', auth, checkInputAccess('pelanggaran'), upload
     }
 });
 
-router.post('/event/submit', auth, checkInputAccess('event'), upload.single('foto'), async (req, res) => {
+router.post('/event/submit', auth, checkInputAccess('event'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'event'), async (req, res) => {
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, nama_event, tingkat } = req.body;
         requireFields(req.body, ['nama', 'nis', 'grha', 'nama_event', 'tingkat']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
-        let foto_path = req.file ? saveFileLocally(req.file.path) : null;
-        console.log('Event - Using local path:', foto_path);
+        const fotoPaths = uploadedPaths(req, 'event');
+        console.log('Event - Using local paths:', fotoPaths);
         
         // Get student's calculated class from database
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
@@ -428,15 +446,10 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
             console.log('Event - Direct submission (privileged)');
             const point = await calculateEventPoints(tingkat);
             
-            // Move photo to organized folder if exists
-            let finalFotoPath = foto_path;
-            if (foto_path) {
-                const movedPath = movePhotoToApprovedFolder(foto_path, 'event');
-                if (movedPath) {
-                    finalFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-                }
-            }
-            
+            // Move every file to the organized folder once.
+            const moved = moveEvidenceToApproved(fotoPaths, 'event');
+            const finalFotoPaths = fotoPaths.map((p) => moved.get(p) || p);
+
             const conn = await db.getConnection();
             let insertedId = null;
             try {
@@ -445,9 +458,10 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
                     `INSERT INTO event 
                     (user_id, nama, nis, kelas, grha, nama_event, tingkat, foto, point, status) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                    [userId, nama, nis, calculatedClass, grha, nama_event, tingkat, finalFotoPath, point]
+                    [userId, nama, nis, calculatedClass, grha, nama_event, tingkat, finalFotoPaths[0] || null, point]
                 );
                 insertedId = result.insertId;
+                await replaceEvidence('event', insertedId, finalFotoPaths, conn.query);
 
                 await applyIptChange(userId, 'event', point, buildKeterangan('event', { nama_event, tingkat }), conn.query, { type: 'event', id: insertedId });
 
@@ -473,8 +487,9 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
             `INSERT INTO event_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, nama_event, tingkat, foto)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, nama_event, tingkat, foto_path]
+            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, nama_event, tingkat, fotoPaths[0] || null]
         );
+        await replaceEvidence('event_approvals', result.insertId, fotoPaths, db.query);
 
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_EVENT', `User ${req.user.nama} (${req.user.role}) submitted event for ${nama} (${nis}): ${nama_event}`, req.ip);
@@ -506,14 +521,14 @@ router.post('/event/submit', auth, checkInputAccess('event'), upload.single('fot
 });
 
 // Submit Organisasi for Approval (or Direct Submit for Superadmin)
-router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.single('foto'), async (req, res) => {
+router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'organisasi'), async (req, res) => {
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, jabatan_organisasi, kategori_organisasi } = req.body;
         requireFields(req.body, ['nama', 'nis', 'grha', 'jabatan_organisasi', 'kategori_organisasi']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
-        let foto_path = req.file ? saveFileLocally(req.file.path) : null;
-        console.log('Organisasi - Using local path:', foto_path);
+        const fotoPaths = uploadedPaths(req, 'organisasi');
+        console.log('Organisasi - Using local paths:', fotoPaths);
         
         // Get student's calculated class from database
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
@@ -525,15 +540,10 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
             console.log('Organisasi - Direct submission (privileged)');
             const point = await calculateOrganisasiPoints(kategori_organisasi, jabatan_organisasi);
             
-            // Move photo to organized folder if exists
-            let finalFotoPath = foto_path;
-            if (foto_path) {
-                const movedPath = movePhotoToApprovedFolder(foto_path, 'organisasi');
-                if (movedPath) {
-                    finalFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-                }
-            }
-            
+            // Move every file to the organized folder once.
+            const moved = moveEvidenceToApproved(fotoPaths, 'organisasi');
+            const finalFotoPaths = fotoPaths.map((p) => moved.get(p) || p);
+
             const conn = await db.getConnection();
             let insertedId = null;
             try {
@@ -542,9 +552,10 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
                     `INSERT INTO organisasi 
                     (user_id, nama, nis, kelas, grha, jabatan_organisasi, foto, kategori_organisasi, point, status) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                    [userId, nama, nis, calculatedClass, grha, jabatan_organisasi, finalFotoPath, kategori_organisasi, point]
+                    [userId, nama, nis, calculatedClass, grha, jabatan_organisasi, finalFotoPaths[0] || null, kategori_organisasi, point]
                 );
                 insertedId = result.insertId;
+                await replaceEvidence('organisasi', insertedId, finalFotoPaths, conn.query);
 
                 await applyIptChange(
                     userId,
@@ -577,8 +588,9 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
             `INSERT INTO organisasi_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, jabatan_organisasi, kategori_organisasi, foto)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, jabatan_organisasi, kategori_organisasi, foto_path]
+            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, jabatan_organisasi, kategori_organisasi, fotoPaths[0] || null]
         );
+        await replaceEvidence('organisasi_approvals', result.insertId, fotoPaths, db.query);
 
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_ORGANISASI', `User ${req.user.nama} (${req.user.role}) submitted organisasi for ${nama} (${nis}): ${kategori_organisasi}`, req.ip);
@@ -610,14 +622,14 @@ router.post('/organisasi/submit', auth, checkInputAccess('organisasi'), upload.s
 });
 
 // Submit Kepanitiaan for Approval (or Direct Submit for Superadmin)
-router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload.single('foto'), async (req, res) => {
+router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'kepanitiaan'), async (req, res) => {
     try {
         const userRole = req.user.role;
         const { nama, nis, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan } = req.body;
         requireFields(req.body, ['nama', 'nis', 'grha', 'jabatan_kepanitiaan', 'kategori_kepanitiaan']);
         const userId = await resolveStudentIdByNis(nis, req.user.id);
-        let foto_path = req.file ? saveFileLocally(req.file.path) : null;
-        console.log('Kepanitiaan - Using local path:', foto_path);
+        const fotoPaths = uploadedPaths(req, 'kepanitiaan');
+        console.log('Kepanitiaan - Using local paths:', fotoPaths);
         
         // Get student's calculated class from database
         const [studentData] = await db.query('SELECT kelas FROM users WHERE id = ?', [userId]);
@@ -629,15 +641,10 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
             console.log('Kepanitiaan - Direct submission (privileged)');
             const point = await calculateKepanitiaanPoints(jabatan_kepanitiaan);
             
-            // Move photo to organized folder if exists
-            let finalFotoPath = foto_path;
-            if (foto_path) {
-                const movedPath = movePhotoToApprovedFolder(foto_path, 'kepanitiaan');
-                if (movedPath) {
-                    finalFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-                }
-            }
-            
+            // Move every file to the organized folder once.
+            const moved = moveEvidenceToApproved(fotoPaths, 'kepanitiaan');
+            const finalFotoPaths = fotoPaths.map((p) => moved.get(p) || p);
+
             const conn = await db.getConnection();
             let insertedId = null;
             try {
@@ -646,9 +653,10 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
                     `INSERT INTO kepanitiaan 
                     (user_id, nama, nis, kelas, grha, jabatan_kepanitiaan, foto, kategori_kepanitiaan, point, status) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved')`,
-                    [userId, nama, nis, calculatedClass, grha, jabatan_kepanitiaan, finalFotoPath, kategori_kepanitiaan, point]
+                    [userId, nama, nis, calculatedClass, grha, jabatan_kepanitiaan, finalFotoPaths[0] || null, kategori_kepanitiaan, point]
                 );
                 insertedId = result.insertId;
+                await replaceEvidence('kepanitiaan', insertedId, finalFotoPaths, conn.query);
 
                 await applyIptChange(
                     userId,
@@ -681,8 +689,9 @@ router.post('/kepanitiaan/submit', auth, checkInputAccess('kepanitiaan'), upload
             `INSERT INTO kepanitiaan_approvals
             (user_id, submitted_by, nama, nis, kelas, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan, foto)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan, foto_path]
+            [userId, req.user.id, nama, nis, calculatedClass, grha, pembina, jabatan_kepanitiaan, kategori_kepanitiaan, fotoPaths[0] || null]
         );
+        await replaceEvidence('kepanitiaan_approvals', result.insertId, fotoPaths, db.query);
 
         // Log activity
         await logActivity(req.user.id, 'SUBMIT_KEPANITIAAN', `User ${req.user.nama} (${req.user.role}) submitted kepanitiaan for ${nama} (${nis}): ${kategori_kepanitiaan}`, req.ip);
@@ -798,6 +807,20 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
         }
         const isGroupDecision = targetRows.length > 1;
 
+        // Load the complete evidence set once per row. Group members normally
+        // share the same files, so move each physical file only once.
+        const evidenceByRow = new Map();
+        const allEvidencePaths = [];
+        for (const row of targetRows) {
+            const items = await listEvidence(table, row.id, db.query);
+            const paths = items.map((item) => item.path);
+            evidenceByRow.set(row.id, paths);
+            allEvidencePaths.push(...paths);
+        }
+        const movedEvidence = status === 'approved'
+            ? moveEvidenceToApproved(allEvidencePaths, type)
+            : new Map();
+
         // One transaction for the whole decision (all kelompok members):
         // staging flips, main-table inserts, IPT recompute, and
         // notifications commit atomically. Pool-only side effects
@@ -824,37 +847,11 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
                 pointChange = await calculateOrganisasiPoints(data.kategori_organisasi, data[pointField]);
             }
 
-            // Move photo to organized folder if exists
-            // `foto` is the current column name (`foto_path` kept as fallback for older DBs)
-            let finalFotoPath = data.foto ?? data.foto_path;
-            if (finalFotoPath) {
-                const movedPath = movePhotoToApprovedFolder(finalFotoPath, type);
-                if (movedPath) {
-                    finalFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-                } else {
-                    // The file may already have been moved to the approved folder
-                    // (e.g. approving another member of the same kelompok submission
-                    // that shares one evidence file). Fall back to the approved
-                    // location when the stored path no longer exists on disk.
-                    const approvedGuess = path.join('uploads', 'approved', type, path.basename(finalFotoPath)).replace(/\\/g, '/');
-                    let storedExists = false;
-                    try {
-                        storedExists = fs.existsSync(resolveUploadPath(finalFotoPath));
-                    } catch {
-                        storedExists = false;
-                    }
-                    if (!storedExists) {
-                        try {
-                            if (fs.existsSync(resolveUploadPath(approvedGuess))) {
-                                console.log(`Approval evidence already in approved folder, reusing: ${approvedGuess}`);
-                                finalFotoPath = approvedGuess;
-                            }
-                        } catch {
-                            // keep the stored path
-                        }
-                    }
-                }
-            }
+            // Move every file to the approved folder once. Group rows share
+            // the same physical files, so the path map is reused below.
+            const rowEvidence = evidenceByRow.get(row.id) || (data.foto ? [data.foto] : []);
+            const finalEvidencePaths = rowEvidence.map((p) => movedEvidence.get(p) || p);
+            const finalFotoPath = finalEvidencePaths[0] || null;
 
             // Insert to actual table
             let insertQuery, insertParams;
@@ -873,6 +870,7 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             }
 
             const [mainRow] = await conn.query(insertQuery, insertParams);
+            await replaceEvidence(type, mainRow.insertId, finalEvidencePaths, conn.query);
 
             // Prestasi: carry mentor links from the approval row to the new
             // record (falls back to the primary pembina for pre-migration rows).
@@ -888,10 +886,8 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
             }
 
             // Keep the submission row pointing at the real file location
-            // (the file was just moved to the approved folder above).
-            if (finalFotoPath) {
-                await conn.query(`UPDATE ${table} SET foto = ? WHERE id = ?`, [finalFotoPath, row.id]);
-            }
+            // (the files were just moved to the approved folder above).
+            await replaceEvidence(table, row.id, finalEvidencePaths, conn.query);
 
             await applyIptChange(
                 data.user_id,
@@ -930,12 +926,13 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
                 return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
             }
 
-            // Delete the evidence file when no other row references it anymore
-            // (kelompok siblings share one file never strand them).
+            // Delete the evidence files when no other row references them
+            // anymore (kelompok siblings share files, never strand them).
             // Deferred until after commit: the check must read committed state.
-            const fotoVal = data.foto ?? data.foto_path;
-            if (fotoVal) {
-                deferredOrphans.push({ foto: fotoVal, table, id: row.id, folderHint: type });
+            const rowEvidence = evidenceByRow.get(row.id) || (data.foto ? [data.foto] : []);
+            await deleteEvidenceForRecord(table, row.id, conn.query);
+            if (rowEvidence.length > 0) {
+                deferredOrphans.push({ paths: rowEvidence, table, id: row.id, folderHint: type });
             }
 
             // Deferred until after commit (logActivity writes via the pool).
@@ -954,7 +951,10 @@ router.put('/superadmin/:type/:id', auth, approverFor('type'), async (req, res) 
         await conn.commit();
 
         for (const o of deferredOrphans) {
-            await deletePhotoIfOrphan(db, o.foto, { exclude: { table: o.table, id: o.id }, folderHint: o.folderHint });
+            await deleteEvidenceFilesIfOrphan(o.paths, {
+                exclude: { table: o.table, id: o.id },
+                folderHint: o.folderHint
+            });
         }
         for (const args of deferredLogs) {
             await logActivity(...args);
@@ -1058,6 +1058,7 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
             return res.json({ message: `${type} berhasil disetujui` });
         }
 
+        const evidencePaths = await listEvidence(table, id, db.query);
         const conn = await db.getConnection();
         const deferredLogs = [];
         try {
@@ -1070,6 +1071,8 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
                 await conn.rollback();
                 return res.status(400).json({ message: 'Pengajuan ini sudah diproses' });
             }
+
+            await deleteEvidenceForRecord(table, id, conn.query);
 
             // Deferred until after commit (logActivity writes via the pool).
             deferredLogs.push([approverId, `REJECT_${type.toUpperCase()}`, `${actorLabel} rejected ${type} for ${data.nama} (${data.nis}): ${notes || 'No reason'}`, ipAddress]);
@@ -1086,6 +1089,10 @@ async function handleLegacyApproval(type, id, status, notes, approverId, approve
         } finally {
             conn.release();
         }
+        await deleteEvidenceFilesIfOrphan(evidencePaths, {
+            exclude: { table, id },
+            folderHint: type
+        });
         for (const args of deferredLogs) {
             await logActivity(...args);
         }
@@ -1178,6 +1185,14 @@ router.get('/all', auth, approverOnly, async (req, res) => {
             pelanggaran = rows;
         }
 
+        await Promise.all([
+            attachEvidence(prestasi, 'prestasi_approvals'),
+            attachEvidence(event, 'event_approvals'),
+            attachEvidence(organisasi, 'organisasi_approvals'),
+            attachEvidence(kepanitiaan, 'kepanitiaan_approvals'),
+            attachEvidence(pelanggaran, 'pelanggaran')
+        ]);
+
         res.json({
             prestasi: prestasi.map(p => ({ ...p, type: 'prestasi', status: getRowApprovalStatus(p) })),
             event: event.map(e => ({ ...e, type: 'event', status: getRowApprovalStatus(e) })),
@@ -1253,6 +1268,14 @@ router.get('/user-submissions', auth, async (req, res) => {
             WHERE user_id = ? OR submitted_by = ?
             ORDER BY created_at DESC
         `, [userId, userId]);
+
+        await Promise.all([
+            attachEvidence(prestasi, 'prestasi_approvals'),
+            attachEvidence(event, 'event_approvals'),
+            attachEvidence(organisasi, 'organisasi_approvals'),
+            attachEvidence(kepanitiaan, 'kepanitiaan_approvals'),
+            attachEvidence(pelanggaran, 'pelanggaran')
+        ]);
 
         res.json({
             prestasi,

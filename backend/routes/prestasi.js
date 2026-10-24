@@ -3,11 +3,23 @@ const router = express.Router();
 const { auth, superAdminOnly } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
-const { movePhotoToApprovedFolder, deletePhotoIfOrphan, replaceEvidenceFile } = require('../utils/fileUtils');
-const { ensureUploadSubdir, resolveUploadPath } = require('../utils/paths');
+const {
+    uploadedPaths,
+    attachEvidence,
+    listEvidence,
+    replaceEvidence,
+    updateEvidenceSelection,
+    parseEvidenceIdList,
+    validateEvidenceSelection,
+    withEvidenceUploadCleanup,
+    deleteEvidenceForRecord,
+    moveEvidenceToApproved,
+    deleteEvidenceFilesIfOrphan
+} = require('../utils/evidenceStore');
+const { ensureUploadSubdir } = require('../utils/paths');
 const { recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans } = require('../utils/ipt');
 
 // Configure multer for file uploads
@@ -16,7 +28,7 @@ const storage = multer.diskStorage({
         cb(null, ensureUploadSubdir('prestasi'));
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${path.extname(file.originalname)}`);
     }
 });
 
@@ -109,6 +121,7 @@ router.get('/all', auth, async (req, res) => {
         const [prestasi] = await db.query(dataQuery, [...params, limit, offset]);
 
         await attachPembinaLists(prestasi, 'prestasi_pembina', 'prestasi_id');
+        await attachEvidence(prestasi, 'prestasi');
 
         res.json({
             data: prestasi,
@@ -146,6 +159,7 @@ router.get('/user/:userId', auth, async (req, res) => {
             'SELECT id, user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, point, status, rejection_reason, created_at FROM prestasi WHERE user_id = ? AND status = ? ORDER BY created_at DESC',
             [req.params.userId, 'approved']
         );
+        await attachEvidence(prestasi, 'prestasi');
         res.json(prestasi);
     } catch (error) {
         console.error(error);
@@ -154,7 +168,7 @@ router.get('/user/:userId', auth, async (req, res) => {
 });
 
 // Create prestasi
-router.post('/', auth, upload.single('foto'), async (req, res) => {
+router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'prestasi'), async (req, res) => {
     try {
         const { nama, nis, nama_lomba, kelas, pembina, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
         let tanggalPelaksanaan = null;
@@ -163,19 +177,7 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
         } catch (err) {
             return res.status(err.statusCode || 400).json({ message: err.message });
         }
-        let foto = req.file ? req.file.filename : null;
-
-        // Rename file to NIS_Nama Lomba format
-        if (req.file && foto) {
-            const oldPath = resolveUploadPath(path.join('uploads/prestasi', foto));
-            const ext = path.extname(req.file.originalname);
-            const newFileName = `${nis}_${nama_lomba}${ext}`;
-            const newPath = resolveUploadPath(path.join('uploads/prestasi', newFileName));
-
-            // Rename the file
-            fs.renameSync(oldPath, newPath);
-            foto = newFileName;
-        }
+        const fotoPaths = uploadedPaths(req, 'prestasi');
 
         const point = await calculatePrestasiPoints(juara, kategori);
 
@@ -187,8 +189,9 @@ router.post('/', auth, upload.single('foto'), async (req, res) => {
 
         const [result] = await db.query(
             'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggal_pelaksanaan, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [req.user.id, nama, nis, nama_lomba, foto, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggalPelaksanaan, point]
+            [req.user.id, nama, nis, nama_lomba, fotoPaths[0] || null, kelas, resolvedPembinaName, resolvedPembinaId, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggalPelaksanaan, point]
         );
+        await replaceEvidence('prestasi', result.insertId, fotoPaths);
         await setPembinaLinks(db.query, 'prestasi_pembina', 'prestasi_id', result.insertId, mentorIds);
 
         // Log activity
@@ -222,23 +225,18 @@ router.put('/:id/approve', auth, superAdminOnly, async (req, res) => {
         }
 
         const prestasiData = prestasi[0];
-        let newFotoPath = prestasiData.foto;
-
-        // Move photo to approved folder if it exists
-        if (prestasiData.foto) {
-            const movedPath = movePhotoToApprovedFolder(path.join('uploads/prestasi', prestasiData.foto), 'prestasi');
-            if (movedPath) {
-                newFotoPath = path.join('uploads', movedPath).replace(/\\/g, '/');
-            }
-        }
+        const sourceEvidence = await listEvidence('prestasi', prestasiId, conn.query);
+        const movedEvidence = moveEvidenceToApproved(sourceEvidence.map((item) => item.path), 'prestasi');
+        const finalEvidence = sourceEvidence.map((item) => movedEvidence.get(item.path) || item.path);
 
         // Conditional update closes the race between the SELECT above and
         // this write (two admins approving at once): only one wins.
-        const [updated] = await conn.query('UPDATE prestasi SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', newFotoPath, prestasiId, 'pending']);
+        const [updated] = await conn.query('UPDATE prestasi SET status = ?, foto = ? WHERE id = ? AND status = ?', ['approved', finalEvidence[0] || null, prestasiId, 'pending']);
         if (updated.affectedRows === 0) {
             await conn.rollback();
             return res.status(400).json({ message: 'Prestasi ini sudah diproses' });
         }
+        await replaceEvidence('prestasi', prestasiId, finalEvidence, conn.query);
 
         // Recompute the total from approved records (same formula as
         // syncIpt.js) never arithmetic, so double-approvals and drift
@@ -283,6 +281,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
             return res.status(404).json({ message: 'Prestasi not found' });
         }
         const wasApproved = rows[0].status === 'approved';
+        let rejectedEvidence = [];
 
         // Serialize concurrent mutations of this student, then reject.
         if (wasApproved) {
@@ -290,6 +289,8 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
         }
 
         await conn.query('UPDATE prestasi SET status = ?, rejection_reason = ? WHERE id = ?', ['rejected', rejection_reason, prestasiId]);
+        rejectedEvidence = (await listEvidence('prestasi', prestasiId, conn.query)).map((item) => item.path);
+        await deleteEvidenceForRecord('prestasi', prestasiId, conn.query);
 
         // A rejected record stops counting: recompute WITHOUT a tombstone
         // row ('*_reject' is not in the ipt_history CHECK list), then remove
@@ -312,10 +313,11 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        if (rows[0]?.foto) {
-            await deletePhotoIfOrphan(db, rows[0].foto, { exclude: { table: 'prestasi', id: prestasiId }, folderHint: 'prestasi' });
-        }
+        // Delete evidence files when no other row references them anymore.
+        await deleteEvidenceFilesIfOrphan(rejectedEvidence, {
+            exclude: { table: 'prestasi', id: prestasiId },
+            folderHint: 'prestasi'
+        });
 
         res.json({ message: 'Prestasi rejected' });
     } catch (error) {
@@ -328,7 +330,7 @@ router.put('/:id/reject', auth, superAdminOnly, async (req, res) => {
 });
 
 // Update prestasi (for superadmin)
-router.put('/:id', auth, upload.single('foto'), async (req, res) => {
+router.put('/:id', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'prestasi'), async (req, res) => {
     try {
         const prestasiId = req.params.id;
         const { nama, nis, nama_lomba, kelas, pembina, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
@@ -372,30 +374,32 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
             ? mentorList.map((m) => m.id)
             : (resolvedPembinaId ? [resolvedPembinaId] : []);
 
-        // Evidence: a new upload keeps its timestamp-unique multer name.
-        // Queued rows keep the type-folder path; approved rows land in
-        // approved/ (same scheme as submit + approve).
-        let newFotoPath = null;
-        if (req.file) {
-            newFotoPath = `uploads/prestasi/${req.file.filename}`;
-            if (prestasiData.status === 'approved') {
-                const moved = movePhotoToApprovedFolder(newFotoPath, 'prestasi');
-                if (moved) newFotoPath = path.join('uploads', moved).replace(/\\/g, '/');
-            }
-        }
+        // Evidence: uploads keep their timestamp-unique multer name. Queued
+        // rows keep the type-folder path; approved rows land in approved/.
+        const uploaded = uploadedPaths(req, 'prestasi');
+        const removeIds = parseEvidenceIdList(req.body.remove_evidence_ids);
+        await validateEvidenceSelection('prestasi', prestasiId, removeIds, uploaded.length);
+        const moved = prestasiData.status === 'approved'
+            ? moveEvidenceToApproved(uploaded, 'prestasi')
+            : new Map();
+        const newEvidence = uploaded.map((p) => moved.get(p) || p);
 
         const conn = await db.getConnection();
         try {
             await conn.beginTransaction();
 
             if (!isGroup) {
-                let foto = prestasiData.foto;
-                if (newFotoPath) {
-                    foto = newFotoPath;
-                    if (prestasiData.foto) {
-                        await deletePhotoIfOrphan(conn, prestasiData.foto, { exclude: { table: 'prestasi', id: prestasiId }, folderHint: 'prestasi' });
-                    }
+                let finalEvidence = null;
+                let removedEvidence = [];
+                if (newEvidence.length > 0 || removeIds.length > 0) {
+                    const result = await updateEvidenceSelection('prestasi', prestasiId, {
+                        removeIds,
+                        newPaths: newEvidence
+                    }, conn.query);
+                    finalEvidence = result.finalPaths;
+                    removedEvidence = result.removedPaths;
                 }
+                const foto = finalEvidence ? (finalEvidence[0] || null) : prestasiData.foto;
 
                 const [upd] = await conn.query(
                     'UPDATE prestasi SET nama = ?, nis = ?, nama_lomba = ?, foto = ?, kelas = ?, pembina = ?, pembina_id = ?, grha = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, tanggal_pelaksanaan = ?, point = ? WHERE id = ?',
@@ -419,6 +423,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                         recordId: prestasiId,
                     });
                 }
+                await conn.commit();
+                await deleteEvidenceFilesIfOrphan(removedEvidence, { folderHint: 'prestasi' });
             } else {
                 // ---- kelompok path: shared fields + membership diff ----
                 const [siblings] = await conn.query(
@@ -449,9 +455,31 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                 const kept = siblings.filter((s) => newIds.has(s.user_id));
                 const added = members.filter((m) => !existingIds.has(m.id));
                 const removed = siblings.filter((s) => !newIds.has(s.user_id));
-                const sharedFoto = newFotoPath || siblings[0]?.foto || prestasiData.foto;
                 const wasApproved = prestasiData.status === 'approved';
                 const touchedUserIds = new Set();
+
+                // Group members share one evidence set. The edit modal shows
+                // one member's rows, so resolve removals against that set and
+                // then mirror the final set onto every surviving member.
+                const currentEvidence = await listEvidence('prestasi', prestasiId, conn.query);
+                const currentEvidenceIds = new Set(currentEvidence.map((item) => Number(item.id)).filter((id) => id > 0));
+                for (const id of new Set(removeIds)) {
+                    if (!currentEvidenceIds.has(id)) {
+                        await conn.rollback();
+                        return res.status(400).json({ message: 'File bukti yang akan dihapus tidak ditemukan pada data ini' });
+                    }
+                }
+                const removeSet = new Set(removeIds);
+                const removedEvidenceItems = currentEvidence.filter((item) => item.id && removeSet.has(Number(item.id)));
+                const keptEvidenceItems = currentEvidence.filter((item) => !item.id || !removeSet.has(Number(item.id)));
+                const evidenceChanged = newEvidence.length > 0 || removedEvidenceItems.length > 0;
+                const finalEvidence = [...keptEvidenceItems.map((item) => item.path), ...newEvidence];
+                const sharedFoto = evidenceChanged
+                    ? (finalEvidence[0] || null)
+                    : (siblings[0]?.foto || prestasiData.foto);
+                const removedEvidence = evidenceChanged
+                    ? removedEvidenceItems.map((item) => item.path)
+                    : [];
 
                 // Serialize concurrent mutations of every touched student.
                 if (wasApproved) {
@@ -468,6 +496,10 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                         'UPDATE prestasi SET nama_lomba = ?, juara = ?, kategori = ?, jenis_lomba = ?, kategori_lomba = ?, pembina = ?, pembina_id = ?, foto = ?, tanggal_pelaksanaan = ?, point = ? WHERE id = ?',
                         [nama_lomba, juara, kategori, jenis_lomba, 'kelompok', resolvedPembinaName, resolvedPembinaId, sharedFoto, tanggalPelaksanaan, point, s.id]
                     );
+                    if (evidenceChanged) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await replaceEvidence('prestasi', s.id, finalEvidence, conn.query);
+                    }
                     // eslint-disable-next-line no-await-in-loop
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', s.id, mentorIds);
                     touchedUserIds.add(s.user_id);
@@ -480,6 +512,10 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                         'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, grup_lomba, tanggal_pelaksanaan, foto, point, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [m.id, m.nama, m.nis, nama_lomba, m.kelas || '', resolvedPembinaName, resolvedPembinaId, m.grha || '', juara, kategori, jenis_lomba, 'kelompok', prestasiData.grup_lomba, tanggalPelaksanaan, sharedFoto, point, prestasiData.status]
                     );
+                    if (evidenceChanged) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await replaceEvidence('prestasi', addedRow.insertId, finalEvidence, conn.query);
+                    }
                     // eslint-disable-next-line no-await-in-loop
                     await setPembinaLinks(conn.query, 'prestasi_pembina', 'prestasi_id', addedRow.insertId, mentorIds);
                     touchedUserIds.add(m.id);
@@ -489,6 +525,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                 for (const s of removed) {
                     // eslint-disable-next-line no-await-in-loop
                     await conn.query('DELETE FROM prestasi WHERE id = ?', [s.id]);
+                    // eslint-disable-next-line no-await-in-loop
+                    await deleteEvidenceForRecord('prestasi', s.id, conn.query);
                     touchedUserIds.add(s.user_id);
                     if (wasApproved) {
                         // eslint-disable-next-line no-await-in-loop
@@ -515,10 +553,9 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
                     }
                 }
 
-                // Old shared evidence is orphaned only once no row uses it.
-                if (newFotoPath && prestasiData.foto) {
-                    await deletePhotoIfOrphan(conn, prestasiData.foto, { folderHint: 'prestasi' });
-                }
+                await conn.commit();
+                // Removed shared files are orphaned only once no row uses them.
+                await deleteEvidenceFilesIfOrphan(removedEvidence, { folderHint: 'prestasi' });
             }
 
             // Log activity
@@ -538,7 +575,8 @@ router.put('/:id', auth, upload.single('foto'), async (req, res) => {
         res.json({ message: 'Prestasi updated successfully' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        const status = error.statusCode || 500;
+        res.status(status).json({ message: status >= 500 ? 'Server error' : error.message });
     }
 });
 
