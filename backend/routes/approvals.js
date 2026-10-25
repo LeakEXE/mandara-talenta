@@ -13,7 +13,7 @@ const {
     calculateKepanitiaanPoints,
     calculatePelanggaranPoints
 } = require('../constants/points');
-const { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
+const { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, resolveRequiredPembina, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan } = require('../utils/ipt');
 const { normalizeTanggalPelaksanaan } = require('../utils/prestasiFields');
 const {
     getApprovalStatusColumn,
@@ -204,17 +204,8 @@ router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), withEvidence
         const fotoPaths = uploadedPaths(req, 'prestasi');
         console.log('Prestasi - Using local paths:', fotoPaths);
 
-        // Resolve pembina to a guru user id (frontend sends pembina_id from the teachers dropdown).
-        const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(pembina_id, pembina);
-        if ((pembina_id || pembina) && !resolvedPembinaId && !resolvedPembinaName) {
-            return res.status(400).json({ message: 'Data pembina tidak valid' });
-        }
-        // Multi-pembina: frontend sends pembina_ids (JSON array of guru ids);
-        // falls back to the single primary above for old clients.
-        const mentorList = await resolvePembinaIds(req.body.pembina_ids);
-        const mentorIds = mentorList.length > 0
-            ? mentorList.map((m) => m.id)
-            : (resolvedPembinaId ? [resolvedPembinaId] : []);
+        const { pembinaId: resolvedPembinaId, pembinaName: resolvedPembinaName, mentorIds } =
+            await resolveRequiredPembina(pembina_id, pembina, req.body.pembina_ids);
 
         // Resolve every member (kelas/grha diambil dari database per siswa).
         // One shared grup_lomba id links kelompok members (used by the
@@ -871,9 +862,8 @@ router.put('/user-submissions/:type/:id', auth, (req, res, next) => {
                 error.statusCode = error.statusCode || 400;
                 throw error;
             }
-            const { id: pembinaId, nama: pembinaName } = await resolvePembina(req.body.pembina_id, req.body.pembina);
-            const mentorList = await resolvePembinaIds(req.body.pembina_ids);
-            const mentorIds = mentorList.length > 0 ? mentorList.map((mentor) => mentor.id) : (pembinaId ? [pembinaId] : []);
+            const { pembinaId, pembinaName, mentorIds } =
+                await resolveRequiredPembina(req.body.pembina_id, req.body.pembina, req.body.pembina_ids);
             resolvedPrestasi = { juara, kategori, jenisLomba, namaLomba, tanggalPelaksanaan, pembinaId, pembinaName, mentorIds, kategoriLomba };
             updateColumns = ['nama_lomba', 'juara', 'kategori', 'jenis_lomba', 'kategori_lomba', 'tanggal_pelaksanaan', 'pembina', 'pembina_id'];
             updateValues = [namaLomba, juara, kategori, jenisLomba, kategoriLomba, tanggalPelaksanaan, pembinaName, pembinaId];

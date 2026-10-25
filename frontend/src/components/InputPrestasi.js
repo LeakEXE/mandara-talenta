@@ -574,6 +574,13 @@ function InputPrestasi() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    const submitIds = (formData.pembina_ids || []).length > 0
+      ? formData.pembina_ids
+      : (formData.pembina_id ? [formData.pembina_id] : []);
+    if (submitIds.length === 0) {
+      setMessage('Pilih minimal satu pembina.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -588,9 +595,6 @@ function InputPrestasi() {
         data.append(key, formData[key]);
       });
       // Multi-pembina ids as JSON (replaces the comma-joined array above).
-      const submitIds = (formData.pembina_ids || []).length > 0
-        ? formData.pembina_ids
-        : (formData.pembina_id ? [formData.pembina_id] : []);
       data.set('pembina_ids', JSON.stringify(submitIds.map(String)));
       if (formData.kategori_lomba === 'kelompok') {
         data.append('anggota', JSON.stringify(selectedMembers.map(m => ({ nama: m.nama, nis: m.nis }))));
@@ -1172,7 +1176,7 @@ function InputPrestasi() {
         </div>
 
         <div className="form-group">
-          <label>Pembina (bisa lebih dari 1)</label>
+          <label>Pembina (wajib, bisa lebih dari 1)</label>
           <SearchableTeacherSelect
             isMulti
             value={formData.pembina_ids || []}
