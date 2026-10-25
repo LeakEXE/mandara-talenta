@@ -581,6 +581,10 @@ function InputPrestasi() {
       setMessage('Pilih minimal satu pembina.');
       return;
     }
+    if (evidenceFiles.length === 0) {
+      setMessage('Unggah minimal satu file bukti.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -1224,7 +1228,7 @@ function InputPrestasi() {
         </div>
         
         <div className="form-group">
-          <EvidenceFilesField type="prestasi" files={evidenceFiles} onFilesChange={setEvidenceFiles} />
+          <EvidenceFilesField type="prestasi" files={evidenceFiles} onFilesChange={setEvidenceFiles} required />
         </div>
 
         <button

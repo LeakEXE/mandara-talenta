@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES, assertEvidenceRequired } = require('../utils/evidenceUpload');
 const path = require('path');
 const { auth, approverOnly, approverFor, checkInputAccess, getApprovalScopes } = require('../middleware/auth');
 const db = require('../config/database');
@@ -172,6 +172,7 @@ const saveFileLocally = (filePath) => {
 // Submit Prestasi for Approval (or Direct Submit for Superadmin)
 router.post('/prestasi/submit', auth, checkInputAccess('prestasi'), withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'prestasi'), async (req, res) => {
     try {
+        assertEvidenceRequired(req.files);
         const userRole = req.user.role;
         const { nama, nis, nama_lomba, pembina, pembina_id, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
         let tanggalPelaksanaan = null;

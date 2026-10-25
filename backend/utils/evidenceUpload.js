@@ -24,6 +24,14 @@ function evidenceFileFilter(req, file, cb) {
     cb(new Error('Hanya file gambar (JPG, PNG, GIF, WebP) dan PDF yang diizinkan (maks 10MB)'));
 }
 
+function assertEvidenceRequired(files) {
+    if (!Array.isArray(files) || files.length === 0) {
+        const error = new Error('Minimal satu file bukti wajib diunggah');
+        error.statusCode = 400;
+        throw error;
+    }
+}
+
 const EVIDENCE_LIMITS = {
     fileSize: EVIDENCE_MAX_SIZE,
     files: EVIDENCE_MAX_FILES
@@ -35,5 +43,6 @@ module.exports = {
     EVIDENCE_MIMETYPES,
     EVIDENCE_EXTENSIONS,
     evidenceFileFilter,
+    assertEvidenceRequired,
     EVIDENCE_LIMITS
 };
