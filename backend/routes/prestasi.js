@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth, superAdminOnly } = require('../middleware/auth');
 const db = require('../config/database');
 const multer = require('multer');
-const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES } = require('../utils/evidenceUpload');
+const { evidenceFileFilter, EVIDENCE_LIMITS, EVIDENCE_MAX_FILES, assertEvidenceRequired } = require('../utils/evidenceUpload');
 const crypto = require('crypto');
 const path = require('path');
 const {
@@ -173,6 +173,7 @@ router.get('/user/:userId', auth, async (req, res) => {
 // Create prestasi
 router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_MAX_FILES), 'prestasi'), async (req, res) => {
     try {
+        assertEvidenceRequired(req.files);
         const { nama, nis, nama_lomba, kelas, pembina, grha, juara, kategori, jenis_lomba = 'akademik', kategori_lomba = 'individu' } = req.body;
         let tanggalPelaksanaan = null;
         try {

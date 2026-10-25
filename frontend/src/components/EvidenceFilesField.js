@@ -11,7 +11,8 @@ function EvidenceFilesField({
   existingRecord,
   removedIds = [],
   onRemovedIdsChange,
-  disabled = false
+  disabled = false,
+  required = false
 }) {
   const [error, setError] = useState('');
   const allExisting = evidenceItemsForRecord(existingRecord);
@@ -36,7 +37,9 @@ function EvidenceFilesField({
 
   return (
     <div className="form-group">
-      <label>Bukti pendukung (maks. {EVIDENCE_MAX_FILES} file, 10 MB per file)</label>
+      <label>
+        Bukti pendukung{required ? ' (wajib)' : ''} (maks. {EVIDENCE_MAX_FILES} file, 10 MB per file)
+      </label>
       {allExisting.length > 0 && (
         <div style={{ display: 'grid', gap: '6px', margin: '6px 0 10px' }}>
           {allExisting.map((item) => {
@@ -81,6 +84,7 @@ function EvidenceFilesField({
       <input
         type="file"
         multiple
+        aria-required={required}
         disabled={disabled || remainingCount >= EVIDENCE_MAX_FILES}
         onChange={handleSelection}
         accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.jpg,.jpeg,.png,.gif,.webp,.pdf"
