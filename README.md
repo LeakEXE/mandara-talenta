@@ -421,6 +421,51 @@ mandara-talenta/
 - Untuk memperbarui biodata banyak siswa berdasarkan NIS, gunakan `backend/scripts/updateStudentsFromCsv.js`. Sertakan kolom `nis` sebagai kunci dan kolom biodata yang ingin diubah; tanpa `--yes` skrip hanya menampilkan pratinjau. Contoh: `node scripts/updateStudentsFromCsv.js siswa.csv --yes`.
 - Kolom NISN hanya dapat dipakai setelah migrasi dijalankan. Sel kosong tidak mengubah data, dan kelas dihitung otomatis dari tahun pelajaran serta jurusan.
 
+### Notifikasi Push Browser
+
+Push browser adalah tambahan opsional pada notifikasi in-site. Pengguna mengaktifkannya sendiri per browser/perangkat dari halaman **Notifikasi**. Push hanya menampilkan pesan umum; detail tetap tersedia setelah membuka aplikasi. Browser harus mendukung Service Worker dan Push API serta menggunakan HTTPS (localhost dapat digunakan untuk development). Pada iPhone/iPad, pengguna harus menambahkan situs ke Home Screen dan membuka PWA pada versi iOS yang mendukung Web Push.
+
+#### Persiapan satu kali pada server yang sudah berjalan
+
+1. Buat backup PostgreSQL menggunakan prosedur backup server yang sudah digunakan dan pastikan backup dapat diakses sebelum mengubah schema.
+2. Dari checkout lokal yang sudah memiliki dependency backend, buka `backend` lalu buat key VAPID:
+   ```powershell
+   Set-Location .\backend
+   npx web-push generate-vapid-keys
+   ```
+   Simpan `publicKey` dan `privateKey` di penyimpanan rahasia. Jangan jalankan perintah ini di log GitHub Actions atau commit hasilnya.
+3. Tambahkan konfigurasi berikut ke `backend/.env` **di server saja**. Jangan masukkan key ke `frontend/.env`, source code, atau GitHub Actions log:
+   ```dotenv
+   WEB_PUSH_PUBLIC_KEY=<public-key>
+   WEB_PUSH_PRIVATE_KEY=<private-key>
+   WEB_PUSH_SUBJECT=mailto:<alamat-admin-yang-valid>
+   ```
+   Pertahankan pasangan key yang sama setelah perangkat mulai berlangganan. Mengganti key akan membatalkan langganan push browser yang tersimpan.
+4. Deploy perubahan ke branch `main`. Workflow deploy menerapkan migrasi sebagai langkah tersendiri setelah source/dependency diperbarui dan sebelum frontend build serta restart PM2. Langkah migrasi idempotent dan aman dijalankan pada deploy berikutnya. Jika langkah migrasi gagal, workflow berhenti sebelum restart aplikasi.
+5. Jika melakukan deployment manual tanpa workflow, setelah source terbaru tersedia jalankan migrasi dari PowerShell sebelum build/restart:
+   ```powershell
+   Set-Location 'C:\path\to\project\backend'
+   node scripts\runMigration.js database\migrate_web_push.sql
+   if ($LASTEXITCODE -ne 0) { throw 'Web Push migration failed' }
+   ```
+   Ganti path tersebut dengan lokasi project yang sebenarnya. Migrasi membuat tabel subscription dan antrean push serta trigger PostgreSQL pada tabel `notifications`; tidak perlu mengubah atau menjalankan ulang `skema.sql`.
+6. Periksa `pm2 logs <nama-aplikasi>` dan pastikan backend mencatat bahwa VAPID delivery telah dikonfigurasi tanpa menampilkan key. Buka situs melalui HTTPS, masuk sebagai pengguna, buka **Notifikasi**, lalu tekan **Aktifkan pada perangkat ini** dan izinkan notifikasi browser.
+7. Buat notifikasi uji melalui alur aplikasi yang memang menghasilkan notifikasi untuk akun tersebut. Pastikan push yang muncul hanya berisi pesan umum, menekan push membuka `/notifications`, dan detail tetap muncul di pusat notifikasi.
+
+Status antrean dapat diperiksa oleh administrator database tanpa membaca endpoint atau key subscription:
+```sql
+SELECT status, COUNT(*) FROM push_delivery_queue GROUP BY status ORDER BY status;
+```
+
+#### Penonaktifan / rollback push
+
+- Untuk menonaktifkan pengiriman, hapus konfigurasi `WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, dan `WEB_PUSH_SUBJECT` dari `backend/.env`, lalu restart PM2. Karena trigger database dapat tetap mengantrekan notifikasi, jalankan juga:
+  ```sql
+  DROP TRIGGER IF EXISTS trg_enqueue_notification_push_deliveries ON notifications;
+  ```
+- Biarkan tabel subscription dan antrean tetap ada saat rollback aplikasi; jangan hapus tabel yang berisi data. Untuk mengaktifkan kembali setelah code tersedia, pulihkan konfigurasi VAPID dan jalankan ulang migrasi idempotent sebelum restart.
+- Notifikasi in-site tetap berfungsi tanpa konfigurasi push. Push hanya dikirim untuk notifikasi baru setelah migration dan subscription perangkat tersedia; histori lama tidak dikirim ulang.
+
 ## Catatan Penting
 
 - Setiap siswa baru otomatis mendapatkan 80 poin IPT awal

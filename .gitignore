@@ -18,6 +18,7 @@ backend/uploads/*
 # Dev
 TODO
 *.tmp
+specs/
 
 # Logs
 *.log
@@ -45,3 +46,5 @@ patches
 **.test.*
 *.sql
 !backend/database/migrate_student_nisn.sql
+!backend/database/migrate_web_push.sql
+!backend/tests/webPush.test.js

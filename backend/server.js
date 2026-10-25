@@ -185,6 +185,7 @@ app.use('/api/event', require('./routes/event'));
 app.use('/api/pelanggaran', require('./routes/pelanggaran'));
 app.use('/api/perilaku', require('./routes/perilaku'));
 app.use('/api/approvals', require('./routes/approvals'));
+app.use('/api/push', require('./routes/push'));
 app.use('/api/permissions', require('./routes/permissions'));
 app.use('/api/input-access', require('./routes/input-access'));
 app.use('/api/logs', require('./routes/logs'));
@@ -229,6 +230,7 @@ app.get('*', (req, res) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
+require('./services/webPush').startPushWorker();
 // cloudflared runs on another LAN host, so it must reach this app over the
 // LAN. Set HOST to this server's LAN IP (preferred) or 0.0.0.0, and firewall
 // port 5000 so only the cloudflared host can connect. The 127.0.0.1 default

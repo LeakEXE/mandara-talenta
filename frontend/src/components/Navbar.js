@@ -38,9 +38,9 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
     }
   }, [user]);
 
-  // Fetch unread notifications count for siswa/guru/pegawai
+  // Fetch unread notifications for all roles that can receive notifications.
   useEffect(() => {
-    if (user?.role === 'siswa' || user?.role === 'guru' || user?.role === 'pegawai') {
+    if (user) {
       fetchUnreadCount();
 
       // Refresh count every 30 seconds
@@ -51,7 +51,7 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
 
   // Refresh unread count when navigating to notifications page
   useEffect(() => {
-    if (location.pathname === '/notifications' && (user?.role === 'siswa' || user?.role === 'guru' || user?.role === 'pegawai')) {
+    if (location.pathname === '/notifications' && user) {
       fetchUnreadCount();
     }
   }, [location.pathname, user]);
@@ -138,7 +138,7 @@ function Navbar({ user, onLogout, isMobileMenuOpen, toggleMobileMenu }) {
     // Approvals for superadmin + users holding at least one approval scope
     { path: '/approvals', label: 'Approvals', show: user?.role === 'superadmin' || (permissions?.approval_scopes || []).length > 0 },
     { path: '/drive-viewer', label: 'File Manager', show: user?.role === 'superadmin' },
-    { path: '/notifications', label: 'Notifikasi', show: user?.role === 'siswa' || user?.role === 'guru' || user?.role === 'pegawai' },
+    { path: '/notifications', label: 'Notifikasi', show: Boolean(user) },
     { path: '/logs', label: 'Logs', show: user?.role === 'superadmin' },
     { path: '/wali-kelas', label: 'Manajemen Wali Kelas', show: user?.role === 'superadmin' },
     { path: '/wali-kelas-guru', label: 'Wali Kelas', show: (user?.role === 'guru' || user?.role === 'pegawai') && user?.wali_kelas },

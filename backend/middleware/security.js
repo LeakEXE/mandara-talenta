@@ -166,7 +166,7 @@ const errorHandler = (err, req, res, next) => {
   });
 };
 
-const SENSITIVE_KEY = /pass(?:word|wd)?|token|captcha|authorization|cookie|secret|api[_-]?key|reset/i;
+const SENSITIVE_KEY = /pass(?:word|wd)?|token|captcha|authorization|cookie|secret|api[_-]?key|reset|endpoint|p256dh|^auth$/i;
 const REDACTED = '[REDACTED]';
 const MAX_LOG_STRING = 500;
 const MAX_LOG_BODY_BYTES = 64 * 1024;
