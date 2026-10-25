@@ -45,6 +45,24 @@ async function resolvePembinaIds(input) {
     return uniq.filter((id) => byId.has(id)).map((id) => ({ id, nama: byId.get(id) }));
 }
 
+async function resolveRequiredPembina(pembinaId, pembinaName, pembinaIds) {
+    const fallback = await resolvePembina(pembinaId, pembinaName);
+    const mentors = await resolvePembinaIds(pembinaIds);
+    const primary = mentors[0] || fallback;
+    const name = typeof primary.nama === 'string' ? primary.nama.trim() : '';
+    if (!name) {
+        const error = new Error('Pembina wajib dipilih.');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return {
+        pembinaId: primary.id,
+        pembinaName: name,
+        mentorIds: mentors.length > 0 ? mentors.map((mentor) => mentor.id) : (primary.id ? [primary.id] : [])
+    };
+}
+
 // Replace all mentor links for one prestasi / prestasi_approvals row.
 // linkTable: 'prestasi_pembina' (idCol 'prestasi_id') or
 // 'prestasi_approval_pembina' (idCol 'approval_id').
@@ -254,4 +272,4 @@ async function applyPerilakuIptChange(userId, newPoint, keterangan, excludePeril
     return { ...(stored || {}), supersededCount };
 }
 
-module.exports = { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans };
+module.exports = { resolveStudentIdByNis, resolvePembina, resolvePembinaIds, resolveRequiredPembina, setPembinaLinks, attachPembinaLists, applyIptChange, applyPerilakuIptChange, buildKeterangan, recomputeAndStoreIpt, purgeRecordHistory, recordLifecycleKeterangans };

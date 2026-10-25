@@ -13,6 +13,7 @@
     "passwords:reset-staff": "node scripts/bulkResetStaffPasswords.js",
     "data:reset-records": "node scripts/resetAllRecords.js",
     "data:seed-test": "node scripts/seedTestRecords.js",
+    "test:ipt": "node --test tests/ipt.test.js",
     "test:web-push": "node --test tests/webPush.test.js"
   },
   "dependencies": {

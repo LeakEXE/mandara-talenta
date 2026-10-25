@@ -34,7 +34,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage, fileFilter: evidenceFileFilter, limits: EVIDENCE_LIMITS });
 const { calculatePrestasiPoints } = require('../constants/points');
-const { buildKeterangan, resolvePembina, resolvePembinaIds, setPembinaLinks, attachPembinaLists, resolveStudentIdByNis } = require('../utils/ipt');
+const { buildKeterangan, resolvePembina, resolvePembinaIds, resolveRequiredPembina, setPembinaLinks, attachPembinaLists, resolveStudentIdByNis } = require('../utils/ipt');
 const { normalizeTanggalPelaksanaan } = require('../utils/prestasiFields');
 
 // Get all prestasi (for approvals) — server-side pagination + filters
@@ -184,11 +184,8 @@ router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_M
 
         const point = await calculatePrestasiPoints(juara, kategori);
 
-        const { id: resolvedPembinaId, nama: resolvedPembinaName } = await resolvePembina(req.body.pembina_id, pembina);
-        const mentorList = await resolvePembinaIds(req.body.pembina_ids);
-        const mentorIds = mentorList.length > 0
-            ? mentorList.map((m) => m.id)
-            : (resolvedPembinaId ? [resolvedPembinaId] : []);
+        const { pembinaId: resolvedPembinaId, pembinaName: resolvedPembinaName, mentorIds } =
+            await resolveRequiredPembina(req.body.pembina_id, pembina, req.body.pembina_ids);
 
         const [result] = await db.query(
             'INSERT INTO prestasi (user_id, nama, nis, nama_lomba, foto, kelas, pembina, pembina_id, grha, juara, kategori, jenis_lomba, kategori_lomba, tanggal_pelaksanaan, point) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -206,6 +203,9 @@ router.post('/', auth, withEvidenceUploadCleanup(upload.array('foto', EVIDENCE_M
         res.status(201).json({ message: 'Prestasi submitted for approval', id: result.insertId });
     } catch (error) {
         console.error(error);
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ message: error.message });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 });

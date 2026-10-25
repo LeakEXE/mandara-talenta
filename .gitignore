@@ -47,4 +47,5 @@ patches
 *.sql
 !backend/database/migrate_student_nisn.sql
 !backend/database/migrate_web_push.sql
+!backend/tests/ipt.test.js
 !backend/tests/webPush.test.js
