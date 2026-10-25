@@ -7,6 +7,23 @@ function Notifications() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pushSettings, setPushSettings] = useState({
+    checking: true,
+    supported: false,
+    configured: false,
+    enabled: false,
+    permission: 'default',
+    publicKey: null,
+    busy: false,
+    error: ''
+  });
+
+  const decodeVapidKey = (key) => {
+    const padding = '='.repeat((4 - (key.length % 4)) % 4);
+    const base64 = (key + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = window.atob(base64);
+    return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  };
 
   const markAllAsRead = useCallback(async () => {
     try {
@@ -44,6 +61,146 @@ function Notifications() {
     fetchUnreadCount();
     markAllAsRead();
   }, [markAllAsRead, fetchUnreadCount]);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkPushSupport = async () => {
+      const supported = Boolean(
+        window.isSecureContext
+        && 'serviceWorker' in navigator
+        && 'PushManager' in window
+        && 'Notification' in window
+      );
+      if (!supported) {
+        setPushSettings((current) => ({ ...current, checking: false, supported: false }));
+        return;
+      }
+      try {
+        const configResponse = await api.get('/push/config');
+        const publicKey = configResponse.data?.publicKey || null;
+        const configured = Boolean(configResponse.data?.enabled && publicKey);
+        if (!configured) {
+          if (mounted) {
+            setPushSettings((current) => ({
+              ...current,
+              checking: false,
+              supported: true,
+              configured: false,
+              permission: Notification.permission
+            }));
+          }
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.register('/service-worker.js');
+        await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        let enabled = false;
+        if (subscription) {
+          const statusResponse = await api.post('/push/subscriptions/status', {
+            subscription: subscription.toJSON()
+          });
+          enabled = Boolean(statusResponse.data?.registered);
+        }
+        if (mounted) {
+          setPushSettings((current) => ({
+            ...current,
+            checking: false,
+            supported: true,
+            configured: true,
+            enabled,
+            permission: Notification.permission,
+            publicKey
+          }));
+        }
+      } catch (error) {
+        if (mounted) {
+          setPushSettings((current) => ({
+            ...current,
+            checking: false,
+            supported: true,
+            error: error.response?.data?.message || 'Gagal memeriksa dukungan notifikasi perangkat.'
+          }));
+        }
+      }
+    };
+    checkPushSupport();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const enablePush = async () => {
+    setPushSettings((current) => ({ ...current, busy: true, error: '' }));
+    try {
+      let permission = Notification.permission;
+      if (permission === 'default') {
+        permission = await Notification.requestPermission();
+      }
+      if (permission !== 'granted') {
+        setPushSettings((current) => ({
+          ...current,
+          busy: false,
+          permission,
+          error: permission === 'denied'
+            ? 'Izin notifikasi diblokir di browser. Ubah izin situs di pengaturan browser, lalu coba lagi.'
+            : 'Izin notifikasi belum diberikan.'
+        }));
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register('/service-worker.js');
+      await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription()
+        || await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeVapidKey(pushSettings.publicKey)
+        });
+      try {
+        await api.post('/push/subscriptions', { subscription: subscription.toJSON() });
+      } catch (error) {
+        if (error.response?.status !== 409) throw error;
+        await subscription.unsubscribe();
+        const replacement = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeVapidKey(pushSettings.publicKey)
+        });
+        await api.post('/push/subscriptions', { subscription: replacement.toJSON() });
+      }
+      setPushSettings((current) => ({
+        ...current,
+        busy: false,
+        enabled: true,
+        permission,
+        error: ''
+      }));
+    } catch (error) {
+      setPushSettings((current) => ({
+        ...current,
+        busy: false,
+        error: error.response?.data?.message || 'Gagal mengaktifkan notifikasi perangkat.'
+      }));
+    }
+  };
+
+  const disablePush = async () => {
+    setPushSettings((current) => ({ ...current, busy: true, error: '' }));
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await api.delete('/push/subscriptions', { data: { endpoint: subscription.endpoint } });
+        await subscription.unsubscribe();
+      }
+      setPushSettings((current) => ({ ...current, busy: false, enabled: false, error: '' }));
+    } catch (error) {
+      setPushSettings((current) => ({
+        ...current,
+        busy: false,
+        error: error.response?.data?.message || 'Gagal menonaktifkan notifikasi perangkat.'
+      }));
+    }
+  };
 
   const markAsRead = async (id) => {
     try {
@@ -101,6 +258,46 @@ function Notifications() {
           {message}
         </div>
       )}
+
+      <section className="card-flat" aria-labelledby="push-settings-title" style={{ padding: '16px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <h3 id="push-settings-title" style={{ margin: '0 0 6px', fontSize: '16px' }}>Notifikasi perangkat</h3>
+            <p style={{ margin: 0, color: 'var(--slate)', fontSize: '13px' }}>
+              Pratinjau push bersifat umum. Buka aplikasi untuk membaca detail notifikasi.
+            </p>
+          </div>
+          {pushSettings.checking ? (
+            <span role="status">Memeriksa dukungan...</span>
+          ) : !pushSettings.supported ? (
+            <span>
+              Push tidak didukung pada browser atau koneksi ini. Pada iPhone/iPad, tambahkan situs ke Home Screen dan buka aplikasi terpasang.
+            </span>
+          ) : !pushSettings.configured ? (
+            <span>Notifikasi perangkat belum dikonfigurasi oleh admin.</span>
+          ) : pushSettings.permission === 'denied' && !pushSettings.enabled ? (
+            <span>Izin diblokir. Ubah izin situs di pengaturan browser untuk mengaktifkannya.</span>
+          ) : (
+            <button
+              type="button"
+              className={`btn ${pushSettings.enabled ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={pushSettings.enabled ? disablePush : enablePush}
+              disabled={pushSettings.busy}
+            >
+              {pushSettings.busy
+                ? 'Menyimpan...'
+                : pushSettings.enabled
+                  ? 'Matikan pada perangkat ini'
+                  : 'Aktifkan pada perangkat ini'}
+            </button>
+          )}
+        </div>
+        {pushSettings.error && (
+          <div className="alert alert-danger" role="alert" style={{ margin: '12px 0 0' }}>
+            {pushSettings.error}
+          </div>
+        )}
+      </section>
 
       {notifications.length === 0 ? (
         <div className="card-flat" style={{

@@ -224,7 +224,7 @@ function App() {
           </ProtectedRoute>
         } />
         <Route path="/notifications" element={
-          <ProtectedRoute allowedRoles={['siswa', 'guru', 'pegawai']}>
+          <ProtectedRoute allowedRoles={['siswa', 'guru', 'pegawai', 'superadmin']}>
             {(user) => <MainLayout user={user}><Notifications /></MainLayout>}
           </ProtectedRoute>
         } />
