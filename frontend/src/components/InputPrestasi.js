@@ -11,6 +11,69 @@ import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 import EvidenceFilesField from './EvidenceFilesField';
 
+const toStudentOption = (student) => ({
+  value: student.nis,
+  label: `${student.nama} (${student.nis})`,
+  nama: student.nama,
+  nis: student.nis,
+  kelas: student.kelas,
+  grha: student.grha
+});
+
+function SelectedGroupMembers({ members, onRemove }) {
+  return (
+    <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+      <div aria-live="polite" style={{ fontSize: '13px', color: '#666' }}>
+        {members.length} siswa dipilih · minimal 2
+      </div>
+      {members.map((member) => (
+        <div
+          key={String(member.nis)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '8px 10px',
+            border: '1px solid #d7dce3',
+            borderRadius: '8px',
+            background: '#fff'
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, overflowWrap: 'anywhere' }}>
+              {member.nama}
+            </div>
+            <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+              NIS {member.nis}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(member.nis)}
+            aria-label={`Hapus ${member.nama} dari kelompok`}
+            style={{
+              flexShrink: 0,
+              minWidth: '76px',
+              minHeight: '44px',
+              padding: '8px 12px',
+              border: '1px solid #dc2626',
+              borderRadius: '6px',
+              background: '#fff',
+              color: '#b91c1c',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Hapus
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InputPrestasi() {
   const [formData, setFormData] = useState({
     nama: '',
@@ -1127,15 +1190,26 @@ function InputPrestasi() {
           <div className="form-group">
             <label>Anggota Kelompok (minimal 2) <span className="required">*</span></label>
             <Select
-              isMulti
-              value={selectedMembers}
-              onChange={(selected) => setSelectedMembers(selected || [])}
-              options={students.map(student => ({ value: student.nis, label: `${student.nama} (${student.nis})`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
-              placeholder={studentsLoading ? 'Memuat daftar siswa...' : 'Pilih 2 siswa atau lebih...'}
+              inputId="prestasi-group-student-select"
+              value={null}
+              onChange={(selected) => {
+                if (selected) {
+                  setSelectedMembers((members) => (
+                    members.some((member) => String(member.nis) === String(selected.nis))
+                      ? members
+                      : [...members, selected]
+                  ));
+                }
+              }}
+              options={students
+                .filter((student) => !selectedMembers.some((member) => String(member.nis) === String(student.nis)))
+                .map(toStudentOption)}
               isSearchable
+              isClearable={false}
               isLoading={studentsLoading}
               isDisabled={studentsLoading || students.length === 0}
-              noOptionsMessage={() => studentsError ? 'Daftar siswa gagal dimuat' : 'Tidak ada siswa aktif'}
+              placeholder={studentsLoading ? 'Memuat daftar siswa...' : 'Cari nama atau NIS untuk menambahkan siswa...'}
+              noOptionsMessage={() => studentsError ? 'Daftar siswa gagal dimuat' : 'Tidak ada siswa lain'}
               styles={{
                 control: (provided) => ({
                   ...provided,
@@ -1148,11 +1222,10 @@ function InputPrestasi() {
                 {studentsError}
               </div>
             )}
-            {selectedMembers.length > 0 && (
-              <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>
-                {selectedMembers.length} siswa dipilih: {selectedMembers.map(m => m.nama).join(', ')}
-              </div>
-            )}
+            <SelectedGroupMembers
+              members={selectedMembers}
+              onRemove={(nis) => setSelectedMembers((members) => members.filter((member) => String(member.nis) !== String(nis)))}
+            />
           </div>
         )}
 
@@ -1252,12 +1325,26 @@ function InputPrestasi() {
         <div className="form-group">
           <label>Anggota Kelompok (minimal 2) <span className="required">*</span></label>
           <Select
-            isMulti
-            value={editMembers}
-            onChange={(selected) => setEditMembers(selected || [])}
-            options={students.map(student => ({ value: student.nis, label: `${student.nama} (${student.nis})`, nama: student.nama, nis: student.nis, kelas: student.kelas, grha: student.grha }))}
-            placeholder="Pilih 2 siswa atau lebih..."
+            inputId="prestasi-group-edit-student-select"
+            value={null}
+            onChange={(selected) => {
+              if (selected) {
+                setEditMembers((members) => (
+                  members.some((member) => String(member.nis) === String(selected.nis))
+                    ? members
+                    : [...members, selected]
+                ));
+              }
+            }}
+            options={students
+              .filter((student) => !editMembers.some((member) => String(member.nis) === String(student.nis)))
+              .map(toStudentOption)}
             isSearchable
+            isClearable={false}
+            isLoading={studentsLoading}
+            isDisabled={studentsLoading || students.length === 0}
+            placeholder="Cari nama atau NIS untuk menambahkan siswa..."
+            noOptionsMessage={() => studentsError ? 'Daftar siswa gagal dimuat' : 'Tidak ada siswa lain'}
             styles={{
               control: (provided) => ({
                 ...provided,
@@ -1265,11 +1352,10 @@ function InputPrestasi() {
               })
             }}
           />
-          {editMembers.length > 0 && (
-            <div style={{ marginTop: '8px', fontSize: '13px', color: '#666' }}>
-              {editMembers.length} siswa dipilih: {editMembers.map(m => m.nama).join(', ')}
-            </div>
-          )}
+          <SelectedGroupMembers
+            members={editMembers}
+            onRemove={(nis) => setEditMembers((members) => members.filter((member) => String(member.nis) !== String(nis)))}
+          />
         </div>
         )}
 

@@ -1501,6 +1501,7 @@ router.get('/all', auth, approverOnly, async (req, res) => {
         }
 
         await Promise.all([
+            attachPembinaLists(prestasi, 'prestasi_approval_pembina', 'approval_id'),
             attachEvidence(prestasi, 'prestasi_approvals'),
             attachEvidence(event, 'event_approvals'),
             attachEvidence(organisasi, 'organisasi_approvals'),

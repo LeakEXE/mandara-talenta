@@ -207,7 +207,7 @@ function Approvals() {
     }
 
     const columns = {
-      prestasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Lomba', 'Tgl Lomba', 'Jenis Lomba', 'Kategori Lomba', 'Juara', 'Kategori', 'Foto', 'Status', 'Aksi'],
+      prestasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Pembina', 'Lomba', 'Tgl Lomba', 'Jenis Lomba', 'Kategori Lomba', 'Juara', 'Kategori', 'Foto', 'Status', 'Aksi'],
       event: ['Diajukan Oleh', 'Nama', 'NIS', 'Event', 'Tingkat', 'Foto', 'Status', 'Aksi'],
       organisasi: ['Diajukan Oleh', 'Nama', 'NIS', 'Organisasi', 'Jabatan', 'Foto', 'Status', 'Aksi'],
       kepanitiaan: ['Diajukan Oleh', 'Nama', 'NIS', 'Kepanitiaan', 'Jabatan', 'Foto', 'Status', 'Aksi'],
@@ -262,6 +262,7 @@ function Approvals() {
     const getFieldLabel = (col) => {
       const labelMap = {
         'Lomba': 'Lomba',
+        'Pembina': 'Pembina',
         'Jenis Lomba': 'Jenis',
         'Kategori Lomba': 'Kategori Lomba',
         'Juara': 'Juara',
@@ -280,6 +281,12 @@ function Approvals() {
 
     const getFieldValue = (item, col, type) => {
       if (type === 'prestasi') {
+        if (col === 'Pembina') {
+          const pembinaList = item.pembina_list?.length > 0
+            ? item.pembina_list
+            : (item.pembina ? [item.pembina] : []);
+          return pembinaList.join(', ') || '-';
+        }
         if (col === 'Lomba') return item.nama_lomba;
         if (col === 'Tgl Lomba') return formatTanggalLomba(item.tanggal_pelaksanaan);
         if (col === 'Jenis Lomba') return formatDisplayText(item.jenis_lomba || 'akademik');
@@ -599,6 +606,12 @@ function Approvals() {
                 }}>{item.nis || item.nis_lama || item.student_nis}</td>
                 {type === 'prestasi' && (
                   <>
+                    <td style={{
+                      padding: "16px 18px",
+                      borderBottom: `1px solid ${BORDER}`,
+                      verticalAlign: "middle",
+                      color: TEXT
+                    }}>{getFieldValue(item, 'Pembina', type)}</td>
                     <td style={{
                       padding: "16px 18px",
                       borderBottom: `1px solid ${BORDER}`,
