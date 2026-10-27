@@ -38,6 +38,22 @@ export function validateEvidenceFiles(files, existingCount = 0) {
     return null;
 }
 
+export async function snapshotEvidenceFile(file) {
+    const validationError = validateEvidenceFile(file);
+    if (validationError) {
+        throw new Error(validationError);
+    }
+    if (typeof file.arrayBuffer !== 'function') {
+        throw new Error('Browser tidak dapat membaca file ini.');
+    }
+
+    const content = await file.arrayBuffer();
+    return new File([content], file.name, {
+        type: file.type,
+        lastModified: file.lastModified
+    });
+}
+
 export function evidenceItemsForRecord(record) {
     if (Array.isArray(record?.evidence) && record.evidence.length > 0) {
         return record.evidence;

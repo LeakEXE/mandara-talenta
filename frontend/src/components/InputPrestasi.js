@@ -676,17 +676,18 @@ function InputPrestasi() {
       if (response.data?.direct) {
         fetchAllPrestasi();
       }
+      const preserveStudentIdentity = userRole === 'siswa' && formData.kategori_lomba !== 'kelompok';
       setFormData({
-        nama: '',
-        nis: '',
+        nama: preserveStudentIdentity ? formData.nama : '',
+        nis: preserveStudentIdentity ? formData.nis : '',
         nama_lomba: '',
         tanggal_pelaksanaan: '',
         jenis_lomba: 'akademik',
         kategori_lomba: 'individu',
-        kelas: '',
+        kelas: preserveStudentIdentity ? formData.kelas : '',
         pembina_id: '',
         pembina_ids: [],
-        grha: '',
+        grha: preserveStudentIdentity ? formData.grha : '',
         juara: 'juara_i',
         kategori: 'sekolah'
       });

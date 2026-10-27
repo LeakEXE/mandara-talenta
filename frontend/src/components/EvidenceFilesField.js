@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { getRecordPhotoUrl } from '../utils/recordPhoto';
-import { evidenceItemsForRecord, EVIDENCE_MAX_FILES, validateEvidenceFiles } from '../utils/evidence';
+import { evidenceItemsForRecord, EVIDENCE_MAX_FILES, snapshotEvidenceFile, validateEvidenceFiles } from '../utils/evidence';
 import { isPdfPath } from './EvidenceViewer';
 import { FileText, Trash2, X } from 'lucide-react';
 
@@ -15,12 +15,13 @@ function EvidenceFilesField({
   required = false
 }) {
   const [error, setError] = useState('');
+  const [isReading, setIsReading] = useState(false);
   const allExisting = evidenceItemsForRecord(existingRecord);
   const removed = new Set(removedIds.map(Number));
   const visibleExisting = allExisting.filter((item) => !item.id || !removed.has(Number(item.id)));
   const remainingCount = visibleExisting.length + files.length;
 
-  const handleSelection = (event) => {
+  const handleSelection = async (event) => {
     const incoming = Array.from(event.target.files || []);
     event.target.value = '';
     if (incoming.length === 0) return;
@@ -31,8 +32,20 @@ function EvidenceFilesField({
       setError(validationError);
       return;
     }
+
+    setIsReading(true);
     setError('');
-    onFilesChange(next);
+    try {
+      const snapshots = [];
+      for (const file of incoming) {
+        snapshots.push(await snapshotEvidenceFile(file));
+      }
+      onFilesChange([...files, ...snapshots]);
+    } catch {
+      setError('Tidak dapat membaca file. Tunggu hingga file Google Drive siap, atau unduh ke perangkat lalu pilih kembali.');
+    } finally {
+      setIsReading(false);
+    }
   };
 
   return (
@@ -85,7 +98,7 @@ function EvidenceFilesField({
         type="file"
         multiple
         aria-required={required}
-        disabled={disabled || remainingCount >= EVIDENCE_MAX_FILES}
+        disabled={disabled || isReading || remainingCount >= EVIDENCE_MAX_FILES}
         onChange={handleSelection}
         accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,.jpg,.jpeg,.png,.gif,.webp,.pdf"
       />
@@ -98,7 +111,7 @@ function EvidenceFilesField({
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={disabled}
+                disabled={disabled || isReading}
                 onClick={() => {
                   setError('');
                   onFilesChange(files.filter((_, fileIndex) => fileIndex !== index));
@@ -112,6 +125,7 @@ function EvidenceFilesField({
           ))}
         </ul>
       )}
+      {isReading && <small className="text-muted" role="status">Menyiapkan file...</small>}
       <small className="text-muted">{remainingCount} dari {EVIDENCE_MAX_FILES} file dipilih.</small>
       {error && <div className="alert alert-danger" role="alert" style={{ marginTop: '8px' }}>{error}</div>}
     </div>
