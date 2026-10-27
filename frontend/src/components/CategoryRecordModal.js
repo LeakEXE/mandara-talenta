@@ -8,6 +8,7 @@ import { EvidenceViewer, isPdfPath } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
 import { User, FileText, Paperclip } from 'lucide-react';
 import { evidenceItemsForRecord } from '../utils/evidence';
+import ProfilePhoto from './ProfilePhoto';
 
 const CATEGORY_LABELS = {
   prestasi: 'Prestasi',
@@ -157,7 +158,7 @@ function CategoryRecordModal({ student, category, totalPoint, onClose }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
             <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fff', border: '2px solid #2563eb', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', overflow: 'hidden', flexShrink: 0 }}>
               {avatarUrl ? (
-                <img src={avatarUrl} alt={student.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <ProfilePhoto src={avatarUrl} alt={student.nama} />
               ) : (
                 <User size={16} />
               )}

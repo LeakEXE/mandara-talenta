@@ -49,3 +49,4 @@ patches
 !backend/database/migrate_web_push.sql
 !backend/tests/ipt.test.js
 !backend/tests/webPush.test.js
+!frontend/src/utils/evidence.test.js

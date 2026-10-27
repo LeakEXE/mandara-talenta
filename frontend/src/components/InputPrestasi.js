@@ -6,10 +6,11 @@ import useEditModal from '../hooks/useEditModal';
 import Select from 'react-select';
 import StudentSelect from './StudentSelect';
 import FilterBar from './FilterBar';
-import SearchableTeacherSelect from './SearchableTeacherSelect';
 import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 import EvidenceFilesField from './EvidenceFilesField';
+import GroupSubmissionDetailsModal from './GroupSubmissionDetailsModal';
+import { canEditGroupSubmission } from '../utils/prestasiSubmission';
 
 const toStudentOption = (student) => ({
   value: student.nis,
@@ -19,6 +20,19 @@ const toStudentOption = (student) => ({
   kelas: student.kelas,
   grha: student.grha
 });
+
+const toTeacherOption = (teacher) => ({
+  value: String(teacher.id),
+  label: teacher.nip ? `${teacher.nama} (${teacher.nip})` : teacher.nama,
+  id: String(teacher.id),
+  nama: teacher.nama,
+  nip: teacher.nip
+});
+
+const selectedTeachers = (ids, teachers) => (ids || [])
+  .map(String)
+  .map((id) => teachers.find((teacher) => String(teacher.id) === id))
+  .filter(Boolean);
 
 function SelectedGroupMembers({ members, onRemove }) {
   return (
@@ -74,6 +88,62 @@ function SelectedGroupMembers({ members, onRemove }) {
   );
 }
 
+function SelectedPembina({ pembina, onRemove }) {
+  return (
+    <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+      <div aria-live="polite" style={{ fontSize: '13px', color: '#666' }}>
+        {pembina.length} pembina dipilih
+      </div>
+      {pembina.map((teacher) => (
+        <div
+          key={String(teacher.id)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '8px 10px',
+            border: '1px solid #d7dce3',
+            borderRadius: '8px',
+            background: '#fff'
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, overflowWrap: 'anywhere' }}>
+              {teacher.nama}
+            </div>
+            {teacher.nip && (
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                NIP {teacher.nip}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(teacher.id)}
+            aria-label={`Hapus ${teacher.nama} dari daftar pembina`}
+            style={{
+              flexShrink: 0,
+              minWidth: '76px',
+              minHeight: '44px',
+              padding: '8px 12px',
+              border: '1px solid #dc2626',
+              borderRadius: '6px',
+              background: '#fff',
+              color: '#b91c1c',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Hapus
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InputPrestasi() {
   const [formData, setFormData] = useState({
     nama: '',
@@ -97,6 +167,7 @@ function InputPrestasi() {
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [studentsError, setStudentsError] = useState('');
   const [submissions, setSubmissions] = useState([]);
+  const [viewingSubmission, setViewingSubmission] = useState(null);
   const [hasAccess, setHasAccess] = useState(true);
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [accessMessage, setAccessMessage] = useState('');
@@ -676,17 +747,18 @@ function InputPrestasi() {
       if (response.data?.direct) {
         fetchAllPrestasi();
       }
+      const preserveStudentIdentity = userRole === 'siswa' && formData.kategori_lomba !== 'kelompok';
       setFormData({
-        nama: '',
-        nis: '',
+        nama: preserveStudentIdentity ? formData.nama : '',
+        nis: preserveStudentIdentity ? formData.nis : '',
         nama_lomba: '',
         tanggal_pelaksanaan: '',
         jenis_lomba: 'akademik',
         kategori_lomba: 'individu',
-        kelas: '',
+        kelas: preserveStudentIdentity ? formData.kelas : '',
         pembina_id: '',
         pembina_ids: [],
-        grha: '',
+        grha: preserveStudentIdentity ? formData.grha : '',
         juara: 'juara_i',
         kategori: 'sekolah'
       });
@@ -1254,12 +1326,39 @@ function InputPrestasi() {
 
         <div className="form-group">
           <label>Pembina (wajib, bisa lebih dari 1)</label>
-          <SearchableTeacherSelect
-            isMulti
-            value={formData.pembina_ids || []}
-            teachers={teachers}
-            onChange={(ids) => setFormData(prev => ({ ...prev, pembina_ids: ids, pembina_id: ids[0] || '' }))}
-            placeholder="Cari nama pembina..."
+          <Select
+            inputId="prestasi-pembina-select"
+            value={null}
+            onChange={(selected) => {
+              if (!selected) return;
+              setFormData((prev) => {
+                const ids = prev.pembina_ids || [];
+                if (ids.some((id) => String(id) === selected.id)) return prev;
+                const pembinaIds = [...ids, selected.id];
+                return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+              });
+            }}
+            options={teachers
+              .filter((teacher) => !(formData.pembina_ids || []).some((id) => String(id) === String(teacher.id)))
+              .map(toTeacherOption)}
+            placeholder="Cari nama pembina untuk menambahkan..."
+            isSearchable
+            isClearable={false}
+            isDisabled={teachers.length === 0}
+            noOptionsMessage={() => 'Tidak ada pembina lain'}
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: '40px'
+              })
+            }}
+          />
+          <SelectedPembina
+            pembina={selectedTeachers(formData.pembina_ids, teachers)}
+            onRemove={(id) => setFormData((prev) => {
+              const pembinaIds = (prev.pembina_ids || []).filter((selectedId) => String(selectedId) !== String(id));
+              return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+            })}
           />
         </div>
 
@@ -1452,12 +1551,39 @@ function InputPrestasi() {
 
         <div className="form-group">
           <label>Pembina (bisa lebih dari 1)</label>
-          <SearchableTeacherSelect
-            isMulti
-            value={editModal.editFormData.pembina_ids || []}
-            teachers={teachers}
-            onChange={(ids) => editModal.setEditFormData({ ...editModal.editFormData, pembina_ids: ids, pembina_id: ids[0] || '' })}
-            placeholder="Cari nama pembina..."
+          <Select
+            inputId="prestasi-edit-pembina-select"
+            value={null}
+            onChange={(selected) => {
+              if (!selected) return;
+              editModal.setEditFormData((prev) => {
+                const ids = prev.pembina_ids || [];
+                if (ids.some((id) => String(id) === selected.id)) return prev;
+                const pembinaIds = [...ids, selected.id];
+                return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+              });
+            }}
+            options={teachers
+              .filter((teacher) => !(editModal.editFormData.pembina_ids || []).some((id) => String(id) === String(teacher.id)))
+              .map(toTeacherOption)}
+            placeholder="Cari nama pembina untuk menambahkan..."
+            isSearchable
+            isClearable={false}
+            isDisabled={teachers.length === 0}
+            noOptionsMessage={() => 'Tidak ada pembina lain'}
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: '40px'
+              })
+            }}
+          />
+          <SelectedPembina
+            pembina={selectedTeachers(editModal.editFormData.pembina_ids, teachers)}
+            onRemove={(id) => editModal.setEditFormData((prev) => {
+              const pembinaIds = (prev.pembina_ids || []).filter((selectedId) => String(selectedId) !== String(id));
+              return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+            })}
           />
         </div>
 
@@ -1504,8 +1630,7 @@ function InputPrestasi() {
                 const isGroup = !!group.groupId;
                 const statuses = [...new Set(group.members.map(m => m.status))];
                 const memberNames = group.members.map(m => `${m.nama} (${m.nis})`).join(', ');
-                const canEditGroup = group.members.length > 0
-                  && group.members.every(member => member.status === 'pending' && Number(member.submitted_by) === currentUserId);
+                const canEditGroup = canEditGroupSubmission(group.members, currentUserId);
                 return (
                 <div key={group.groupId || first.id || index} style={{
                   padding: '15px',
@@ -1537,6 +1662,16 @@ function InputPrestasi() {
                   </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {statuses.map(s => <span key={s}>{getStatusBadge({ status: s })}</span>)}
+                    {isGroup && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setViewingSubmission(group)}
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                      >
+                        Lihat
+                      </button>
+                    )}
                     {canEditGroup && (
                       <button className="btn btn-info" onClick={() => handleEditSubmission(first, group.members)} style={{ padding: '4px 10px', fontSize: '12px' }}>
                         Edit
@@ -1549,6 +1684,10 @@ function InputPrestasi() {
           </div>
       )}
       </div>
+      <GroupSubmissionDetailsModal
+        group={viewingSubmission}
+        onClose={() => setViewingSubmission(null)}
+      />
     </div>
   );
 }

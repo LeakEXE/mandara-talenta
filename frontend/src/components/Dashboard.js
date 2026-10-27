@@ -19,6 +19,7 @@ import {
 import './Dashboard.css';
 import { Megaphone, Target, Users, GraduationCap, BarChart3, Trophy, Award } from 'lucide-react';
 import { MedalIcon } from './icons';
+import ProfilePhoto from './ProfilePhoto';
 
 const COLORS = ['#2563eb', '#0d9488', '#15803d', '#d97706', '#7c3aed', '#dc2626', '#db2777', '#0284c7', '#475569'];
 const TOOLTIP_STYLE = {
@@ -45,7 +46,7 @@ function StudentAvatar({ foto, nama, className }) {
   const [failed, setFailed] = useState(false);
   const url = fotoUrl(foto);
   if (url && !failed) {
-    return <img src={url} alt={nama || 'Foto siswa'} onError={() => setFailed(true)} />;
+    return <ProfilePhoto src={url} alt={nama || 'Foto siswa'} onError={() => setFailed(true)} />;
   }
   return <span>{initials(nama)}</span>;
 }

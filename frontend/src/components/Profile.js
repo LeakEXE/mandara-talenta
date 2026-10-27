@@ -6,6 +6,7 @@ import { formatDisplayText } from '../utils/formatDisplayText';
 import { formatDesil } from '../utils/desil';
 import StudentRecordsHistory from './StudentRecordsHistory';
 import { UserRound, Camera, Trash2 } from 'lucide-react';
+import ProfilePhoto from './ProfilePhoto';
 
 const JABATAN_OPTIONS = ['Guru', 'Pegawai'];
 
@@ -852,7 +853,7 @@ function Profile() {
             boxShadow: 'var(--shadow-md)'
           }}>
             {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <ProfilePhoto src={avatarUrl} alt={`Foto profil ${profile?.nama || ''}`} />
             ) : (
               <span style={{ display: 'inline-flex', color: 'var(--text-secondary)' }}><UserRound size={56} /></span>
             )}

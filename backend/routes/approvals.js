@@ -37,6 +37,7 @@ const {
 } = require('../utils/evidenceStore');
 const { ensureUploadSubdir, UPLOAD_DIR, resolveUploadPath } = require('../utils/paths');
 const { getCurrentAcademicYear } = require('../utils/academicYear');
+const { buildUserPrestasiHistoryQuery } = require('../utils/prestasiHistory');
 const fs = require('fs');
 // Local file storage only - Google Drive removed
 
@@ -1530,14 +1531,8 @@ router.get('/user-submissions', auth, async (req, res) => {
         const userId = req.user.id;
         const col = await getApprovalStatusColumn();
 
-        const [prestasi] = await db.query(`
-            SELECT *,
-                   superadmin_status as status,
-                   'prestasi' as type
-            FROM prestasi_approvals
-            WHERE user_id = ? OR submitted_by = ?
-            ORDER BY created_at DESC
-        `, [userId, userId]);
+        const { sql, params } = buildUserPrestasiHistoryQuery(userId);
+        const [prestasi] = await db.query(sql, params);
         await attachPembinaLists(prestasi, 'prestasi_approval_pembina', 'approval_id');
 
         const [event] = await db.query(`

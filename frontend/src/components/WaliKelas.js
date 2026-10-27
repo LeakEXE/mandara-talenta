@@ -5,6 +5,7 @@ import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import StudentDetail from './StudentDetail';
 import SearchableTeacherSelect from './SearchableTeacherSelect';
 import { GraduationCap, BarChart3, Users, User, Settings, Search, Pencil, Lightbulb, CircleCheck, TriangleAlert } from 'lucide-react';
+import ProfilePhoto from './ProfilePhoto';
 
 function getCurrentAcademicYear() {
   const now = new Date();
@@ -368,7 +369,7 @@ function WaliKelas() {
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, overflow: 'hidden' }}>
                   {cls.wali?.foto ? (
-                    <img src={getImageUrl(cls.wali.foto)} alt={cls.wali.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <ProfilePhoto src={getImageUrl(cls.wali.foto)} alt={cls.wali.nama} />
                   ) : (
                     <User size={16} />
                   )}
@@ -561,7 +562,7 @@ function WaliKelas() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#0f172a' }}>
                       <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', overflow: 'hidden' }}>
                         {assignment.guru_foto ? (
-                          <img src={getImageUrl(assignment.guru_foto)} alt={assignment.guru_nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <ProfilePhoto src={getImageUrl(assignment.guru_foto)} alt={assignment.guru_nama} />
                         ) : (
                           <User size={16} />
                         )}
@@ -586,8 +587,8 @@ function WaliKelas() {
 
       {/* DETAIL KELAS MODAL */}
       {showClassDetail && selectedClass && (
-        <div className="modal-overlay app-modal-overlay" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1500 }} onClick={(e) => { if (e.target === e.currentTarget) setShowClassDetail(false) }}>
-          <div className="modal-content" style={{ background: '#fff', borderRadius: '14px', maxWidth: '900px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(15,23,42,.25)' }}>
+        <div className="modal-overlay app-modal-overlay wali-class-detail-overlay" style={{ position: 'fixed', top: 'var(--wali-class-modal-top, 0px)', right: 0, bottom: 0, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--wali-class-modal-padding, 20px)', zIndex: 1500 }} onClick={(e) => { if (e.target === e.currentTarget) setShowClassDetail(false) }}>
+          <div className="modal-content" style={{ background: '#fff', borderRadius: '14px', maxWidth: '900px', width: '100%', maxHeight: 'var(--wali-class-modal-max-height, 90vh)', overflowY: 'auto', boxShadow: '0 20px 50px rgba(15,23,42,.25)' }}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '20px 22px', borderBottom: '1px solid #f1f5f9' }}>
               <div style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={18} /> Detail Kelas {selectedClass.kelas}</div>
               <button onClick={() => setShowClassDetail(false)} className="btn" style={{ border: 'none', borderRadius: '10px', padding: '9px 16px', fontSize: '.82rem', fontWeight: 600, cursor: 'pointer', background: '#ef4444', color: '#fff', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>Tutup</button>
@@ -644,7 +645,7 @@ function WaliKelas() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#0f172a' }}>
                             <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', overflow: 'hidden' }}>
                               {student.foto ? (
-                                <img src={getImageUrl(student.foto)} alt={student.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <ProfilePhoto src={getImageUrl(student.foto)} alt={student.nama} />
                               ) : (
                                 <User size={16} />
                               )}

@@ -8,6 +8,7 @@ import { formatDesil } from '../utils/desil';
 import { EvidenceViewer } from './EvidenceViewer';
 import { CATEGORY_ICONS } from './icons';
 import { User, Pencil, FileText, History, Paperclip } from 'lucide-react';
+import ProfilePhoto from './ProfilePhoto';
 
 function getIptDetailRows(points = {}) {
   // Backend stores pelanggaran buckets already negative (point_dikurangi:
@@ -105,7 +106,7 @@ function StudentDetail({ student, onClose }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: '#fff', border: '2px solid #2563eb', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', overflow: 'hidden' }}>
                   {avatarUrl ? (
-                    <img src={avatarUrl} alt={studentData.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <ProfilePhoto src={avatarUrl} alt={studentData.nama} />
                   ) : (
                     <User size={16} />
                   )}
