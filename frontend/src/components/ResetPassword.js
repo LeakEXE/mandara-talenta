@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../utils/api';
 import { KeyRound } from 'lucide-react';
+import TemporaryPasswordFields from './TemporaryPasswordFields';
+import { validateTemporaryPassword } from '../utils/passwordReset';
 
 function randomTempPassword(length = 10) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
@@ -31,6 +33,8 @@ function ResetPassword() {
   const [reqTarget, setReqTarget] = useState(null);
   const [reqNotes, setReqNotes] = useState('');
   const [reqTemp, setReqTemp] = useState('');
+  const [reqConfirmTemp, setReqConfirmTemp] = useState('');
+  const [showReqPassword, setShowReqPassword] = useState(false);
   const [reqSubmitting, setReqSubmitting] = useState(false);
   const [message, setMessage] = useState(null); // { type: 'success'|'error', text }
   const searchTimer = useRef(null);
@@ -84,12 +88,9 @@ function ResetPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (tempPassword !== confirmPassword) {
-      setMessage({ type: 'error', text: 'Konfirmasi password tidak cocok' });
-      return;
-    }
-    if (tempPassword.length < 6) {
-      setMessage({ type: 'error', text: 'Password sementara minimal 6 karakter' });
+    const validationError = validateTemporaryPassword(tempPassword, confirmPassword);
+    if (validationError) {
+      setMessage({ type: 'error', text: validationError });
       return;
     }
     setShowConfirmModal(true);
@@ -119,14 +120,17 @@ function ResetPassword() {
     setReqTarget({ item, mode });
     setReqNotes('');
     setReqTemp('');
+    setReqConfirmTemp('');
+    setShowReqPassword(false);
     setMessage(null);
   };
 
   const handleReqAction = async () => {
     const { item, mode } = reqTarget;
     if (mode === 'approve') {
-      if (!reqTemp || reqTemp.length < 6) {
-        setMessage({ type: 'error', text: 'Password sementara minimal 6 karakter' });
+      const validationError = validateTemporaryPassword(reqTemp, reqConfirmTemp);
+      if (validationError) {
+        setMessage({ type: 'error', text: validationError });
         return;
       }
       setReqSubmitting(true);
@@ -309,40 +313,19 @@ function ResetPassword() {
             Reset password: {selected.nama} ({selected.username || idLabel(selected)})
           </h3>
           <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label>Password Sementara</label>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={tempPassword}
-                  onChange={(e) => setTempPassword(e.target.value)}
-                  placeholder="Minimal 6 karakter"
-                  autoComplete="new-password"
-                  required
-                  style={{ flex: '1 1 160px', minWidth: 0 }}
-                />
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPassword((s) => !s)}>
-                  {showPassword ? 'Sembunyi' : 'Lihat'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => { const p = randomTempPassword(); setTempPassword(p); setConfirmPassword(p); }}
-                >
-                  Generate
-                </button>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>Konfirmasi Password Sementara</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
-            </div>
+            <TemporaryPasswordFields
+              password={tempPassword}
+              onPasswordChange={setTempPassword}
+              confirmation={confirmPassword}
+              onConfirmationChange={setConfirmPassword}
+              showPassword={showPassword}
+              onTogglePassword={() => setShowPassword((visible) => !visible)}
+              onGenerate={() => {
+                const password = randomTempPassword();
+                setTempPassword(password);
+                setConfirmPassword(password);
+              }}
+            />
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setSelected(null)}>Batal</button>
               <button type="submit" className="btn btn-danger">Reset Password</button>
@@ -421,29 +404,24 @@ function ResetPassword() {
               />
             </div>
             {reqTarget.mode === 'approve' && (
-              <div className="form-group">
-                <label>Password Sementara</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input
-                    type="text"
-                    value={reqTemp}
-                    onChange={(e) => setReqTemp(e.target.value)}
-                    placeholder="Minimal 6 karakter"
-                    autoComplete="new-password"
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setReqTemp(randomTempPassword())}
-                  >
-                    Generate
-                  </button>
-                </div>
+              <>
+                <TemporaryPasswordFields
+                  password={reqTemp}
+                  onPasswordChange={setReqTemp}
+                  confirmation={reqConfirmTemp}
+                  onConfirmationChange={setReqConfirmTemp}
+                  showPassword={showReqPassword}
+                  onTogglePassword={() => setShowReqPassword((visible) => !visible)}
+                  onGenerate={() => {
+                    const password = randomTempPassword();
+                    setReqTemp(password);
+                    setReqConfirmTemp(password);
+                  }}
+                />
                 <div className="form-helper-text">
                   Berikan password ini ke user secara langsung. User wajib menggantinya saat login berikutnya.
                 </div>
-              </div>
+              </>
             )}
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
               <button className="btn btn-secondary" onClick={() => setReqTarget(null)} disabled={reqSubmitting}>
