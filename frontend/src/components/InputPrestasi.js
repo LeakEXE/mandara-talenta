@@ -9,6 +9,8 @@ import FilterBar from './FilterBar';
 import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 import EvidenceFilesField from './EvidenceFilesField';
+import GroupSubmissionDetailsModal from './GroupSubmissionDetailsModal';
+import { canEditGroupSubmission } from '../utils/prestasiSubmission';
 
 const toStudentOption = (student) => ({
   value: student.nis,
@@ -165,6 +167,7 @@ function InputPrestasi() {
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [studentsError, setStudentsError] = useState('');
   const [submissions, setSubmissions] = useState([]);
+  const [viewingSubmission, setViewingSubmission] = useState(null);
   const [hasAccess, setHasAccess] = useState(true);
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [accessMessage, setAccessMessage] = useState('');
@@ -1627,8 +1630,7 @@ function InputPrestasi() {
                 const isGroup = !!group.groupId;
                 const statuses = [...new Set(group.members.map(m => m.status))];
                 const memberNames = group.members.map(m => `${m.nama} (${m.nis})`).join(', ');
-                const canEditGroup = group.members.length > 0
-                  && group.members.every(member => member.status === 'pending' && Number(member.submitted_by) === currentUserId);
+                const canEditGroup = canEditGroupSubmission(group.members, currentUserId);
                 return (
                 <div key={group.groupId || first.id || index} style={{
                   padding: '15px',
@@ -1660,6 +1662,16 @@ function InputPrestasi() {
                   </div>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {statuses.map(s => <span key={s}>{getStatusBadge({ status: s })}</span>)}
+                    {isGroup && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setViewingSubmission(group)}
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                      >
+                        Lihat
+                      </button>
+                    )}
                     {canEditGroup && (
                       <button className="btn btn-info" onClick={() => handleEditSubmission(first, group.members)} style={{ padding: '4px 10px', fontSize: '12px' }}>
                         Edit
@@ -1672,6 +1684,10 @@ function InputPrestasi() {
           </div>
       )}
       </div>
+      <GroupSubmissionDetailsModal
+        group={viewingSubmission}
+        onClose={() => setViewingSubmission(null)}
+      />
     </div>
   );
 }
