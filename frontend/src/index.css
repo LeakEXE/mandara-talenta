@@ -236,6 +236,18 @@ body {
 }
 
 @media (max-width: 768px) {
+  .wali-class-detail-overlay {
+    --wali-class-modal-top: calc(var(--mobile-header-h) + env(safe-area-inset-top, 0px));
+    --wali-class-modal-padding: 12px;
+    --wali-class-modal-max-height: calc(100vh - var(--mobile-header-h) - 24px);
+  }
+
+  @supports (height: 100dvh) {
+    .wali-class-detail-overlay {
+      --wali-class-modal-max-height: calc(100dvh - var(--mobile-header-h) - 24px);
+    }
+  }
+
   .container {
     margin-top: 0;
   }

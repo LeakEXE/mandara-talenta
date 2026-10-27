@@ -587,8 +587,8 @@ function WaliKelas() {
 
       {/* DETAIL KELAS MODAL */}
       {showClassDetail && selectedClass && (
-        <div className="modal-overlay app-modal-overlay" style={{ position: 'fixed', top: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', zIndex: 1500 }} onClick={(e) => { if (e.target === e.currentTarget) setShowClassDetail(false) }}>
-          <div className="modal-content" style={{ background: '#fff', borderRadius: '14px', maxWidth: '900px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 50px rgba(15,23,42,.25)' }}>
+        <div className="modal-overlay app-modal-overlay wali-class-detail-overlay" style={{ position: 'fixed', top: 'var(--wali-class-modal-top, 0px)', right: 0, bottom: 0, background: 'rgba(15,23,42,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--wali-class-modal-padding, 20px)', zIndex: 1500 }} onClick={(e) => { if (e.target === e.currentTarget) setShowClassDetail(false) }}>
+          <div className="modal-content" style={{ background: '#fff', borderRadius: '14px', maxWidth: '900px', width: '100%', maxHeight: 'var(--wali-class-modal-max-height, 90vh)', overflowY: 'auto', boxShadow: '0 20px 50px rgba(15,23,42,.25)' }}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '20px 22px', borderBottom: '1px solid #f1f5f9' }}>
               <div style={{ fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={18} /> Detail Kelas {selectedClass.kelas}</div>
               <button onClick={() => setShowClassDetail(false)} className="btn" style={{ border: 'none', borderRadius: '10px', padding: '9px 16px', fontSize: '.82rem', fontWeight: 600, cursor: 'pointer', background: '#ef4444', color: '#fff', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>Tutup</button>
