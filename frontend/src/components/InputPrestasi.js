@@ -6,7 +6,6 @@ import useEditModal from '../hooks/useEditModal';
 import Select from 'react-select';
 import StudentSelect from './StudentSelect';
 import FilterBar from './FilterBar';
-import SearchableTeacherSelect from './SearchableTeacherSelect';
 import { StatusIcon } from './icons';
 import { ClipboardList, ShieldAlert } from 'lucide-react';
 import EvidenceFilesField from './EvidenceFilesField';
@@ -19,6 +18,19 @@ const toStudentOption = (student) => ({
   kelas: student.kelas,
   grha: student.grha
 });
+
+const toTeacherOption = (teacher) => ({
+  value: String(teacher.id),
+  label: teacher.nip ? `${teacher.nama} (${teacher.nip})` : teacher.nama,
+  id: String(teacher.id),
+  nama: teacher.nama,
+  nip: teacher.nip
+});
+
+const selectedTeachers = (ids, teachers) => (ids || [])
+  .map(String)
+  .map((id) => teachers.find((teacher) => String(teacher.id) === id))
+  .filter(Boolean);
 
 function SelectedGroupMembers({ members, onRemove }) {
   return (
@@ -52,6 +64,62 @@ function SelectedGroupMembers({ members, onRemove }) {
             type="button"
             onClick={() => onRemove(member.nis)}
             aria-label={`Hapus ${member.nama} dari kelompok`}
+            style={{
+              flexShrink: 0,
+              minWidth: '76px',
+              minHeight: '44px',
+              padding: '8px 12px',
+              border: '1px solid #dc2626',
+              borderRadius: '6px',
+              background: '#fff',
+              color: '#b91c1c',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Hapus
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SelectedPembina({ pembina, onRemove }) {
+  return (
+    <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+      <div aria-live="polite" style={{ fontSize: '13px', color: '#666' }}>
+        {pembina.length} pembina dipilih
+      </div>
+      {pembina.map((teacher) => (
+        <div
+          key={String(teacher.id)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            padding: '8px 10px',
+            border: '1px solid #d7dce3',
+            borderRadius: '8px',
+            background: '#fff'
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, overflowWrap: 'anywhere' }}>
+              {teacher.nama}
+            </div>
+            {teacher.nip && (
+              <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
+                NIP {teacher.nip}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(teacher.id)}
+            aria-label={`Hapus ${teacher.nama} dari daftar pembina`}
             style={{
               flexShrink: 0,
               minWidth: '76px',
@@ -1255,12 +1323,39 @@ function InputPrestasi() {
 
         <div className="form-group">
           <label>Pembina (wajib, bisa lebih dari 1)</label>
-          <SearchableTeacherSelect
-            isMulti
-            value={formData.pembina_ids || []}
-            teachers={teachers}
-            onChange={(ids) => setFormData(prev => ({ ...prev, pembina_ids: ids, pembina_id: ids[0] || '' }))}
-            placeholder="Cari nama pembina..."
+          <Select
+            inputId="prestasi-pembina-select"
+            value={null}
+            onChange={(selected) => {
+              if (!selected) return;
+              setFormData((prev) => {
+                const ids = prev.pembina_ids || [];
+                if (ids.some((id) => String(id) === selected.id)) return prev;
+                const pembinaIds = [...ids, selected.id];
+                return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+              });
+            }}
+            options={teachers
+              .filter((teacher) => !(formData.pembina_ids || []).some((id) => String(id) === String(teacher.id)))
+              .map(toTeacherOption)}
+            placeholder="Cari nama pembina untuk menambahkan..."
+            isSearchable
+            isClearable={false}
+            isDisabled={teachers.length === 0}
+            noOptionsMessage={() => 'Tidak ada pembina lain'}
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: '40px'
+              })
+            }}
+          />
+          <SelectedPembina
+            pembina={selectedTeachers(formData.pembina_ids, teachers)}
+            onRemove={(id) => setFormData((prev) => {
+              const pembinaIds = (prev.pembina_ids || []).filter((selectedId) => String(selectedId) !== String(id));
+              return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+            })}
           />
         </div>
 
@@ -1453,12 +1548,39 @@ function InputPrestasi() {
 
         <div className="form-group">
           <label>Pembina (bisa lebih dari 1)</label>
-          <SearchableTeacherSelect
-            isMulti
-            value={editModal.editFormData.pembina_ids || []}
-            teachers={teachers}
-            onChange={(ids) => editModal.setEditFormData({ ...editModal.editFormData, pembina_ids: ids, pembina_id: ids[0] || '' })}
-            placeholder="Cari nama pembina..."
+          <Select
+            inputId="prestasi-edit-pembina-select"
+            value={null}
+            onChange={(selected) => {
+              if (!selected) return;
+              editModal.setEditFormData((prev) => {
+                const ids = prev.pembina_ids || [];
+                if (ids.some((id) => String(id) === selected.id)) return prev;
+                const pembinaIds = [...ids, selected.id];
+                return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+              });
+            }}
+            options={teachers
+              .filter((teacher) => !(editModal.editFormData.pembina_ids || []).some((id) => String(id) === String(teacher.id)))
+              .map(toTeacherOption)}
+            placeholder="Cari nama pembina untuk menambahkan..."
+            isSearchable
+            isClearable={false}
+            isDisabled={teachers.length === 0}
+            noOptionsMessage={() => 'Tidak ada pembina lain'}
+            styles={{
+              control: (provided) => ({
+                ...provided,
+                minHeight: '40px'
+              })
+            }}
+          />
+          <SelectedPembina
+            pembina={selectedTeachers(editModal.editFormData.pembina_ids, teachers)}
+            onRemove={(id) => editModal.setEditFormData((prev) => {
+              const pembinaIds = (prev.pembina_ids || []).filter((selectedId) => String(selectedId) !== String(id));
+              return { ...prev, pembina_ids: pembinaIds, pembina_id: pembinaIds[0] || '' };
+            })}
           />
         </div>
 
