@@ -5,6 +5,7 @@ import { Trophy, Users, Award, Clock, ClipboardList, RefreshCw, Eye } from 'luci
 import { CATEGORY_ICONS, MedalIcon } from './icons';
 import CategoryRecordModal from './CategoryRecordModal';
 import PembinaRecordModal from './PembinaRecordModal';
+import ProfilePhoto from './ProfilePhoto';
 
 const SLATE = "var(--slate)";
 
@@ -644,10 +645,9 @@ function Leaderboard() {
                       <div className="podium-medal"><MedalIcon rank={slot.rank} /></div>
                       <div className="podium-avatar">
                         {s.foto ? (
-                          <img
+                          <ProfilePhoto
                             src={`${API_BASE_URL.replace('/api', '')}${s.foto}`}
                             alt={s.nama}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                           />
                         ) : (
                           <span>{initials(s.nama)}</span>
@@ -724,10 +724,9 @@ function Leaderboard() {
                             <div className="student">
                               <div className="avatar">
                                 {s.foto ? (
-                                  <img
+                                  <ProfilePhoto
                                     src={`${API_BASE_URL.replace('/api', '')}${s.foto}`}
                                     alt={s.nama}
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                   />
                                 ) : (
                                   <span>{initials(s.nama)}</span>
@@ -774,10 +773,9 @@ function Leaderboard() {
                         <div className="student">
                           <div className="avatar">
                             {s.foto ? (
-                              <img
+                              <ProfilePhoto
                                 src={`${API_BASE_URL.replace('/api', '')}${s.foto}`}
                                 alt={s.nama}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                               />
                             ) : (
                               <span>{initials(s.nama)}</span>

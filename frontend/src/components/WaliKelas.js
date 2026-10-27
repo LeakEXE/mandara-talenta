@@ -5,6 +5,7 @@ import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import StudentDetail from './StudentDetail';
 import SearchableTeacherSelect from './SearchableTeacherSelect';
 import { GraduationCap, BarChart3, Users, User, Settings, Search, Pencil, Lightbulb, CircleCheck, TriangleAlert } from 'lucide-react';
+import ProfilePhoto from './ProfilePhoto';
 
 function getCurrentAcademicYear() {
   const now = new Date();
@@ -368,7 +369,7 @@ function WaliKelas() {
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0, overflow: 'hidden' }}>
                   {cls.wali?.foto ? (
-                    <img src={getImageUrl(cls.wali.foto)} alt={cls.wali.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <ProfilePhoto src={getImageUrl(cls.wali.foto)} alt={cls.wali.nama} />
                   ) : (
                     <User size={16} />
                   )}
@@ -561,7 +562,7 @@ function WaliKelas() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#0f172a' }}>
                       <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', overflow: 'hidden' }}>
                         {assignment.guru_foto ? (
-                          <img src={getImageUrl(assignment.guru_foto)} alt={assignment.guru_nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <ProfilePhoto src={getImageUrl(assignment.guru_foto)} alt={assignment.guru_nama} />
                         ) : (
                           <User size={16} />
                         )}
@@ -644,7 +645,7 @@ function WaliKelas() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#0f172a' }}>
                             <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', overflow: 'hidden' }}>
                               {student.foto ? (
-                                <img src={getImageUrl(student.foto)} alt={student.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <ProfilePhoto src={getImageUrl(student.foto)} alt={student.nama} />
                               ) : (
                                 <User size={16} />
                               )}

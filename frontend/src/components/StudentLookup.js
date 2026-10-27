@@ -3,6 +3,7 @@ import api from '../utils/api';
 import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import StudentDetail from './StudentDetail';
+import ProfilePhoto from './ProfilePhoto';
 
 const KELAS_OPTIONS = [
   'X TKJ 1', 'X TKJ 2', 'X TKR 1', 'X TKR 2',
@@ -341,7 +342,7 @@ function StudentLookup() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#0f172a' }}>
                               <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 700, overflow: 'hidden', flexShrink: 0 }}>
                                 {fotoUrl ? (
-                                  <img src={fotoUrl} alt={s.nama} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  <ProfilePhoto src={fotoUrl} alt={s.nama} />
                                 ) : (
                                   String(s.nama || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
                                 )}
