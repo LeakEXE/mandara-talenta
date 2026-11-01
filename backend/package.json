@@ -13,6 +13,8 @@
     "passwords:reset-staff": "node scripts/bulkResetStaffPasswords.js",
     "data:reset-records": "node scripts/resetAllRecords.js",
     "data:seed-test": "node scripts/seedTestRecords.js",
+    "test:academic-year": "node --test tests/academicYear.spec.js",
+    "test:graduation-metrics": "node --test tests/graduationMetrics.spec.js",
     "test:ipt": "node --test tests/ipt.test.js",
     "test:web-push": "node --test tests/webPush.test.js"
   },

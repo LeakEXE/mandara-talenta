@@ -38,10 +38,11 @@ function validateTahunPelajaran(tahunPelajaran) {
 /**
  * Get current academic year based on current date
  * Academic year: July to June
+ * @param {Date} referenceDate - Date to evaluate; defaults to the current date
  * @returns {string} - Current academic year (YYYY-YYYY)
  */
-function getCurrentAcademicYear() {
-    const now = new Date();
+function getCurrentAcademicYear(referenceDate = new Date()) {
+    const now = referenceDate;
     const year = now.getFullYear();
     const month = now.getMonth(); // 0 = January, 6 = July
     
