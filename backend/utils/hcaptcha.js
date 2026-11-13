@@ -32,6 +32,10 @@ const getConfig = () => ({
     sitekey: process.env.HCAPTCHA_SITE_KEY || ''
 });
 
+const isCaptchaDisabledInDevelopment = (env = process.env) => (
+    env.NODE_ENV === 'development' && env.DISABLE_CAPTCHA === 'true'
+);
+
 const getTimeoutMs = () => {
     const configured = Number(process.env.HCAPTCHA_TIMEOUT_MS);
     if (!Number.isFinite(configured) || configured < 1000 || configured > 15000) {
@@ -181,5 +185,6 @@ const verifyHCaptcha = async (token, remoteip) => {
 
 module.exports = {
     verifyHCaptcha,
+    isCaptchaDisabledInDevelopment,
     MAX_TOKEN_LENGTH
 };

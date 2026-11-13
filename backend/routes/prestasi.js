@@ -599,12 +599,15 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         const prestasiData = prestasi[0];
         const wasApproved = prestasiData.status === 'approved';
+        const evidencePaths = (await listEvidence('prestasi', prestasiId, conn.query))
+            .map((item) => item.path);
 
         // Serialize concurrent mutations of this student, then remove the row.
         if (wasApproved) {
             await conn.query('SELECT id FROM users WHERE id = ? FOR UPDATE', [prestasiData.user_id]);
         }
         await conn.query('DELETE FROM prestasi WHERE id = ?', [prestasiId]);
+        await deleteEvidenceForRecord('prestasi', prestasiId, conn.query);
 
         // Approved records contributed to the total: recompute it from the
         // remaining approved records (same formula as syncIpt.js) this
@@ -630,11 +633,12 @@ router.delete('/:id', auth, superAdminOnly, async (req, res) => {
 
         await conn.commit();
 
-        // Delete the evidence file when no other row references it anymore
-        // (kelompok siblings may share one file never strand them).
-        if (prestasiData.foto) {
-            await deletePhotoIfOrphan(db, prestasiData.foto, { folderHint: 'prestasi' });
-        }
+        // Delete evidence only after commit and only when no other row uses it.
+        // Kelompok siblings may share files, so leave those intact.
+        await deleteEvidenceFilesIfOrphan(
+            [...evidencePaths, prestasiData.foto].filter(Boolean),
+            { folderHint: 'prestasi' }
+        );
 
         res.json({ message: 'Prestasi deleted successfully' });
     } catch (error) {
