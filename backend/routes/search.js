@@ -197,6 +197,7 @@ router.get('/leaderboard/category/:category', auth, async (req, res) => {
             FROM users u
             JOIN ${config.table} t ON t.user_id = u.id AND t.status = 'approved'
             WHERE u.role = 'siswa'
+                AND (u.is_graduated = 0 OR u.is_graduated IS NULL)
             GROUP BY u.id, u.nama, u.nis, u.kelas, u.grha, u.foto
             ORDER BY total_point ${order}, u.nama ASC
             LIMIT 20

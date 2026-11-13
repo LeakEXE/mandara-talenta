@@ -4,6 +4,7 @@ import API_BASE_URL from '../config';
 import { useMinIptPerGrade, minIptFor, isBelowMinIpt } from '../utils/minIpt';
 import StudentDetail from './StudentDetail';
 import ProfilePhoto from './ProfilePhoto';
+import GraduationStatusBadge from './GraduationStatusBadge';
 
 const KELAS_OPTIONS = [
   'X TKJ 1', 'X TKJ 2', 'X TKR 1', 'X TKR 2',
@@ -356,12 +357,7 @@ function StudentLookup() {
                           <td style={{ padding: '12px 16px', fontSize: '.85rem', borderBottom: '1px solid #f1f5f9', color: '#334155' }}>{s.grha || '-'}</td>
                           <td style={{ padding: '12px 16px', fontSize: '.85rem', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: belowMin ? '#dc2626' : '#0f172a' }}>{s.ipt_total ?? '-'}</td>
                           <td style={{ padding: '12px 16px', fontSize: '.85rem', borderBottom: '1px solid #f1f5f9' }}>
-                            <span style={{
-                              fontSize: '.72rem', fontWeight: 600, padding: '4px 10px', borderRadius: '999px',
-                              background: lulus ? '#f1f5f9' : '#dcfce7', color: lulus ? '#64748b' : '#16a34a'
-                            }}>
-                              {lulus ? 'Lulus' : 'Aktif'}
-                            </span>
+                            <GraduationStatusBadge isGraduated={lulus} />
                           </td>
                           <td style={{ padding: '12px 16px', fontSize: '.85rem', borderBottom: '1px solid #f1f5f9' }}>
                             <button

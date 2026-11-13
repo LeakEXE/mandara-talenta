@@ -7,6 +7,7 @@ import InstallAppButton from './InstallAppButton';
 // Default support link shown on the login page when school config has none set.
 const DEFAULT_SUPPORT_LINK = 'https://google.com';
 const CAPTCHA_SITE_KEY = process.env.REACT_APP_HCAPTCHA_SITE_KEY || '';
+const CAPTCHA_DISABLED = process.env.REACT_APP_DISABLE_CAPTCHA === 'true';
 
 function Login() {
   const [formData, setFormData] = useState({
@@ -23,6 +24,7 @@ function Login() {
   const [captchaError, setCaptchaError] = useState('');
   const captchaRef = useRef(null);
   const navigate = useNavigate();
+  const captchaReady = CAPTCHA_DISABLED || Boolean(captchaToken && CAPTCHA_SITE_KEY);
 
   useEffect(() => {
     const fetchSchoolConfig = async () => {
@@ -70,14 +72,16 @@ function Login() {
     if (loading) return;
     setError('');
 
-    if (!CAPTCHA_SITE_KEY) {
-      setError('Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.');
-      return;
-    }
+    if (!CAPTCHA_DISABLED) {
+      if (!CAPTCHA_SITE_KEY) {
+        setError('Verifikasi keamanan belum dikonfigurasi. Hubungi administrator.');
+        return;
+      }
 
-    if (!captchaToken) {
-      setError('Silakan selesaikan verifikasi keamanan terlebih dahulu.');
-      return;
+      if (!captchaToken) {
+        setError('Silakan selesaikan verifikasi keamanan terlebih dahulu.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -85,7 +89,7 @@ function Login() {
     try {
       const response = await api.post('/auth/login', {
         ...formData,
-        hcaptchaToken: captchaToken
+        ...(CAPTCHA_DISABLED ? {} : { hcaptchaToken: captchaToken })
       });
 
       // Store user data in localStorage (not token - token is now in HTTP-only cookie)
@@ -399,7 +403,19 @@ function Login() {
             alignItems: 'center',
             gap: '.45rem'
           }}>
-            {CAPTCHA_SITE_KEY ? (
+            {CAPTCHA_DISABLED ? (
+              <div style={{
+                padding: '.7rem',
+                border: '1px solid #fde68a',
+                borderRadius: '8px',
+                background: '#fffbeb',
+                color: '#92400e',
+                fontSize: '.82rem',
+                textAlign: 'center'
+              }}>
+                hCaptcha dinonaktifkan untuk development.
+              </div>
+            ) : CAPTCHA_SITE_KEY ? (
               <HCaptcha
                 ref={captchaRef}
                 sitekey={CAPTCHA_SITE_KEY}
@@ -432,7 +448,7 @@ function Login() {
                 {captchaError}
               </div>
             )}
-            {CAPTCHA_SITE_KEY && (
+            {!CAPTCHA_DISABLED && CAPTCHA_SITE_KEY && (
               <p style={{
                 margin: 0,
                 fontSize: '.7rem',
@@ -453,7 +469,7 @@ function Login() {
 
           <button
             type="submit"
-            disabled={loading || !captchaToken || !CAPTCHA_SITE_KEY}
+            disabled={loading || (!CAPTCHA_DISABLED && (!captchaToken || !CAPTCHA_SITE_KEY))}
             style={{
               position: 'relative',
               marginTop: '.2rem',
@@ -466,14 +482,14 @@ function Login() {
               fontWeight: '700',
               fontSize: '.98rem',
               letterSpacing: '.02em',
-              cursor: loading || !captchaToken || !CAPTCHA_SITE_KEY ? 'not-allowed' : 'pointer',
+              cursor: loading || !captchaReady ? 'not-allowed' : 'pointer',
               overflow: 'hidden',
               transition: 'transform .15s ease, box-shadow .25s ease',
               boxShadow: '0 10px 22px rgba(53,74,134,.35)',
-              opacity: loading || !captchaToken || !CAPTCHA_SITE_KEY ? 0.7 : 1
+              opacity: loading || !captchaReady ? 0.7 : 1
             }}
             onMouseEnter={(e) => {
-              if (!loading && captchaToken && CAPTCHA_SITE_KEY) {
+              if (!loading && captchaReady) {
                 e.target.style.transform = 'translateY(-1px)';
                 e.target.style.boxShadow = '0 12px 26px rgba(53,74,134,.42)';
               }

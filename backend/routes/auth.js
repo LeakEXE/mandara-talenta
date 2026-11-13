@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const { loginLimiter, loginAccountLimiter, loginOutageLimiter, forgotPasswordLimiter } = require('../middleware/security');
-const { verifyHCaptcha } = require('../utils/hcaptcha');
+const { verifyHCaptcha, isCaptchaDisabledInDevelopment } = require('../utils/hcaptcha');
 const { logActivity } = require('../utils/logger');
 
 // Helper: true when the request actually arrived over HTTPS (direct or via proxy)
@@ -62,31 +62,33 @@ router.post('/login', loginOutageLimiter, loginLimiter, loginAccountLimiter, asy
             return res.status(400).json({ message: 'Username atau password salah' });
         }
 
-        if (!captchaToken) {
-            return res.status(400).json({
-                message: 'Verifikasi keamanan wajib diselesaikan.',
-                code: 'CAPTCHA_REQUIRED'
-            });
-        }
-
-        // Verify hCaptcha before touching the database or bcrypt. A provider
-        // outage is a 503 (fail closed) and is deliberately not counted as a
-        // failed credential attempt by the login limiters.
-        const captchaResult = await verifyHCaptcha(captchaToken, req.ip);
-        if (!captchaResult.ok) {
-            if (captchaResult.unavailable) {
-                console.error(`[hCaptcha] verification unavailable: ${captchaResult.reason}`);
-                return res.status(503).json({
-                    message: 'Login sedang tidak tersedia. Coba lagi nanti.',
-                    code: 'LOGIN_UNAVAILABLE'
+        if (!isCaptchaDisabledInDevelopment()) {
+            if (!captchaToken) {
+                return res.status(400).json({
+                    message: 'Verifikasi keamanan wajib diselesaikan.',
+                    code: 'CAPTCHA_REQUIRED'
                 });
             }
 
-            console.warn(`[hCaptcha] token rejected: ${captchaResult.reason}`);
-            return res.status(400).json({
-                message: 'Verifikasi keamanan tidak valid. Silakan coba lagi.',
-                code: 'CAPTCHA_INVALID'
-            });
+            // Verify hCaptcha before touching the database or bcrypt. A provider
+            // outage is a 503 (fail closed) and is deliberately not counted as a
+            // failed credential attempt by the login limiters.
+            const captchaResult = await verifyHCaptcha(captchaToken, req.ip);
+            if (!captchaResult.ok) {
+                if (captchaResult.unavailable) {
+                    console.error(`[hCaptcha] verification unavailable: ${captchaResult.reason}`);
+                    return res.status(503).json({
+                        message: 'Login sedang tidak tersedia. Coba lagi nanti.',
+                        code: 'LOGIN_UNAVAILABLE'
+                    });
+                }
+
+                console.warn(`[hCaptcha] token rejected: ${captchaResult.reason}`);
+                return res.status(400).json({
+                    message: 'Verifikasi keamanan tidak valid. Silakan coba lagi.',
+                    code: 'CAPTCHA_INVALID'
+                });
+            }
         }
 
         const [users] = await db.query(

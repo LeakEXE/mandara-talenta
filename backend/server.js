@@ -41,6 +41,9 @@ if (process.env.NODE_ENV === 'production'
   && (!process.env.HCAPTCHA_SITE_KEY || !process.env.HCAPTCHA_SECRET_KEY)) {
   console.error('[security] HCAPTCHA_SITE_KEY / HCAPTCHA_SECRET_KEY is missing; login will fail closed.');
 }
+if (process.env.NODE_ENV === 'development' && process.env.DISABLE_CAPTCHA === 'true') {
+  console.warn('[security] hCaptcha is disabled for development login only.');
+}
 
 // Prometheus scrape endpoint for the Grafana stack. Mounted before rate
 // limiting and auth so the scraper is never blocked or challenged.

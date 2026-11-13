@@ -192,6 +192,13 @@ lewat `http://test.mydomain.com:3000`, dan daftarkan hostname tersebut pada
 sitekey. Untuk automated test, gunakan test key resmi hCaptcha - jangan pernah
 memakai test key di production.
 
+Untuk development lokal saja, CAPTCHA login dapat dinonaktifkan dengan mengatur
+`DISABLE_CAPTCHA=true` di `backend/.env` dan
+`REACT_APP_DISABLE_CAPTCHA=true` di `frontend/.env`. Restart backend dan
+frontend (atau jalankan ulang `npm run dev` agar frontend dibangun ulang). Backend
+mengabaikan pengaturan bypass ini kecuali `NODE_ENV=development`; jangan aktifkan
+di production.
+
 #### 5. Jalankan Backend
 ```bash
 cd backend

@@ -22,7 +22,11 @@ router.get('/stats', auth, async (req, res) => {
             [byDesil]
         ] = await Promise.all([
             // Total students
-            db.query("SELECT COUNT(*) as count FROM users WHERE role = 'siswa'"),
+            db.query(`
+                SELECT COUNT(*) as count
+                FROM users
+                WHERE role = 'siswa' AND (is_graduated = 0 OR is_graduated IS NULL)
+            `),
 
             // Total teachers
             db.query("SELECT COUNT(*) as count FROM users WHERE role = 'guru' OR role = 'pegawai'"),
@@ -31,7 +35,9 @@ router.get('/stats', auth, async (req, res) => {
             db.query(`
                 SELECT grha, COUNT(*) as count
                 FROM users
-                WHERE role = 'siswa' AND grha IS NOT NULL
+                WHERE role = 'siswa'
+                    AND grha IS NOT NULL
+                    AND (is_graduated = 0 OR is_graduated IS NULL)
                 GROUP BY grha
             `),
 
@@ -39,7 +45,9 @@ router.get('/stats', auth, async (req, res) => {
             db.query(`
                 SELECT kelas, COUNT(*) as count
                 FROM users
-                WHERE role = 'siswa' AND kelas IS NOT NULL AND is_graduated = 0
+                WHERE role = 'siswa'
+                    AND kelas IS NOT NULL
+                    AND (is_graduated = 0 OR is_graduated IS NULL)
                 GROUP BY kelas
                 ORDER BY kelas
             `),
@@ -93,14 +101,18 @@ router.get('/stats', auth, async (req, res) => {
                     MAX(ipt_total) as tertinggi,
                     MIN(ipt_total) as terendah
                 FROM users
-                WHERE role = 'siswa' AND is_graduated = 0 AND ipt_total IS NOT NULL
+                WHERE role = 'siswa'
+                    AND (is_graduated = 0 OR is_graduated IS NULL)
+                    AND ipt_total IS NOT NULL
             `),
 
             // Siswa dengan IPT tertinggi
             db.query(`
                 SELECT id, nama, nis, kelas, grha, foto, ipt_total
                 FROM users
-                WHERE role = 'siswa' AND is_graduated = 0 AND ipt_total IS NOT NULL
+                WHERE role = 'siswa'
+                    AND (is_graduated = 0 OR is_graduated IS NULL)
+                    AND ipt_total IS NOT NULL
                 ORDER BY ipt_total DESC
                 LIMIT 5
             `),
